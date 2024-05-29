@@ -413,7 +413,7 @@ impl Client {
                             this.cache.write_wasm(&bytes, &layer.digest).await?;
                         }
                         ARCHIVE_MEDIATYPE => {
-                            this.unpack_archive_layer(&bytes, &layer.digest).await?;
+                            unpack_archive_layer(&this.cache, &bytes, &layer.digest).await?;
                         }
                         _ => {
                             this.cache.write_data(&bytes, &layer.digest).await?;
@@ -490,7 +490,7 @@ impl Client {
 
     /// Create a new wasm layer based on a file.
     async fn wasm_layer(file: &Path) -> Result<ImageLayer> {
-        tracing::log::trace!("Reading wasm module from {:?}", file);
+        tracing::trace!("Reading wasm module from {:?}", file);
         Ok(ImageLayer::new(
             fs::read(file).await.context("cannot read wasm module")?,
             WASM_LAYER_MEDIA_TYPE.to_string(),
@@ -500,7 +500,7 @@ impl Client {
 
     /// Create a new data layer based on a file.
     async fn data_layer(file: &Path, media_type: String) -> Result<ImageLayer> {
-        tracing::log::trace!("Reading data file from {:?}", file);
+        tracing::trace!("Reading data file from {:?}", file);
         Ok(ImageLayer::new(fs::read(&file).await?, media_type, None))
     }
 
@@ -515,65 +515,22 @@ impl Client {
         }
     }
 
-    /// Unpack archive layer into self.cache
-    async fn unpack_archive_layer(
-        &self,
-        bytes: impl AsRef<[u8]>,
-        digest: impl AsRef<str>,
-    ) -> Result<()> {
-        // Write archive layer to cache as usual
-        self.cache.write_data(&bytes, &digest).await?;
-
-        // Unpack archive into a staging dir
-        let path = self
-            .cache
-            .data_file(&digest)
-            .context("unable to read archive layer from cache")?;
-        let staging_dir = tempfile::tempdir()?;
-        crate::utils::unarchive(path.as_ref(), staging_dir.path()).await?;
-
-        // Traverse unpacked contents and if a file, write to cache by digest
-        // (if it doesn't already exist)
-        for entry in WalkDir::new(staging_dir.path()) {
-            let entry = entry?;
-            if entry.file_type().is_file() && !entry.file_type().is_dir() {
-                let bytes = tokio::fs::read(entry.path()).await?;
-                let digest = format!("sha256:{}", sha256::hex_digest_from_bytes(&bytes));
-                if self.cache.data_file(&digest).is_ok() {
-                    tracing::debug!(
-                        "Skipping unpacked asset {:?}; file already exists",
-                        entry.path()
-                    );
-                } else {
-                    tracing::debug!("Adding unpacked asset {:?} to cache", entry.path());
-                    self.cache.write_data(bytes, &digest).await?;
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Save a credential set containing the registry username and password.
     pub async fn login(
         server: impl AsRef<str>,
         username: impl AsRef<str>,
         password: impl AsRef<str>,
     ) -> Result<()> {
-        // We want to allow a user to login to both https://ghcr.io and ghcr.io.
-        let server = server.as_ref();
-        let server = match server.parse::<Url>() {
-            Ok(url) => url.host_str().unwrap_or(server).to_string(),
-            Err(_) => server.to_string(),
-        };
+        let registry = registry_from_input(server);
 
         // First, validate the credentials. If a user accidentally enters a wrong credential set, this
         // can catch the issue early rather than getting an error at the first operation that needs
         // to use the credentials (first time they do a push/pull/up).
-        Self::validate_credentials(&server, &username, &password).await?;
+        Self::validate_credentials(&registry, &username, &password).await?;
 
         // Save an encoded representation of the credential set in the local configuration file.
         let mut auth = AuthConfig::load_default().await?;
-        auth.insert(server, username, password)?;
+        auth.insert(registry, username, password)?;
         auth.save_default().await
     }
 
@@ -660,6 +617,46 @@ impl Client {
     }
 }
 
+/// Unpack contents of the provided archive layer, represented by bytes and its
+/// corresponding digest, into the provided cache.
+/// A temporary staging directory is created via tempfile::tempdir() to store
+/// the unpacked contents prior to writing to the cache.
+pub async fn unpack_archive_layer(
+    cache: &Cache,
+    bytes: impl AsRef<[u8]>,
+    digest: impl AsRef<str>,
+) -> Result<()> {
+    // Write archive layer to cache as usual
+    cache.write_data(&bytes, &digest).await?;
+
+    // Unpack archive into a staging dir
+    let path = cache
+        .data_file(&digest)
+        .context("unable to read archive layer from cache")?;
+    let staging_dir = tempfile::tempdir()?;
+    crate::utils::unarchive(path.as_ref(), staging_dir.path()).await?;
+
+    // Traverse unpacked contents and if a file, write to cache by digest
+    // (if it doesn't already exist)
+    for entry in WalkDir::new(staging_dir.path()) {
+        let entry = entry?;
+        if entry.file_type().is_file() && !entry.file_type().is_dir() {
+            let bytes = tokio::fs::read(entry.path()).await?;
+            let digest = format!("sha256:{}", sha256::hex_digest_from_bytes(&bytes));
+            if cache.data_file(&digest).is_ok() {
+                tracing::debug!(
+                    "Skipping unpacked asset {:?}; file already exists",
+                    entry.path()
+                );
+            } else {
+                tracing::debug!("Adding unpacked asset {:?} to cache", entry.path());
+                cache.write_data(bytes, &digest).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn digest_from_url(manifest_url: &str) -> Option<String> {
     // The URL is in the form "https://host/v2/refname/manifests/sha256:..."
     let manifest_url = Url::parse(manifest_url).ok()?;
@@ -669,6 +666,20 @@ fn digest_from_url(manifest_url: &str) -> Option<String> {
         Some(last.to_owned())
     } else {
         None
+    }
+}
+
+fn registry_from_input(server: impl AsRef<str>) -> String {
+    // We want to allow a user to login to both https://ghcr.io and ghcr.io.
+    let server = server.as_ref();
+    let server = match server.parse::<Url>() {
+        Ok(url) => url.host_str().unwrap_or(server).to_string(),
+        Err(_) => server.to_string(),
+    };
+    // DockerHub is commonly referenced as 'docker.io' but needs to be 'index.docker.io'
+    match server.as_str() {
+        "docker.io" => "index.docker.io".to_string(),
+        _ => server,
     }
 }
 
@@ -684,6 +695,34 @@ mod test {
             "sha256:0a867093096e0ef01ef749b12b6e7a90e4952eda107f89a676eeedce63a8361f",
             digest
         );
+    }
+
+    #[test]
+    fn can_derive_registry_from_input() {
+        #[derive(Clone)]
+        struct TestCase {
+            input: &'static str,
+            want: &'static str,
+        }
+        let tests: Vec<TestCase> = [
+            TestCase {
+                input: "docker.io",
+                want: "index.docker.io",
+            },
+            TestCase {
+                input: "index.docker.io",
+                want: "index.docker.io",
+            },
+            TestCase {
+                input: "https://ghcr.io",
+                want: "ghcr.io",
+            },
+        ]
+        .to_vec();
+
+        for tc in tests {
+            assert_eq!(tc.want, registry_from_input(tc.input));
+        }
     }
 
     #[tokio::test]

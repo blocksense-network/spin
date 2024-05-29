@@ -46,13 +46,14 @@ use tokio::{
 };
 use tracing::{field::Empty, log, Instrument};
 use wasmtime_wasi_http::{
+    bindings::wasi::http::types::ErrorCode,
     body::{HyperIncomingBody as Body, HyperOutgoingBody},
     types::HostFutureIncomingResponse,
-    WasiHttpView,
+    HttpError, HttpResult,
 };
 
 use crate::{
-    handler::HttpHandlerExecutor,
+    handler::{HandlerType, HttpHandlerExecutor},
     instrument::{instrument_error, MatchedRoute},
     wagi::WagiHttpExecutor,
 };
@@ -101,12 +102,12 @@ impl CliArgs {
 }
 
 pub enum HttpInstancePre {
-    Component(spin_core::InstancePre<RuntimeData>),
+    Component(spin_core::InstancePre<RuntimeData>, HandlerType),
     Module(spin_core::ModuleInstancePre<RuntimeData>),
 }
 
 pub enum HttpInstance {
-    Component(spin_core::Instance),
+    Component(spin_core::Instance, HandlerType),
     Module(spin_core::ModuleInstance),
 }
 
@@ -204,16 +205,20 @@ impl TriggerInstancePre<RuntimeData, HttpTriggerConfig> for HttpInstancePre {
             ))
         } else {
             let comp = component.load_component(engine).await?;
-            Ok(HttpInstancePre::Component(engine.instantiate_pre(&comp)?))
+            let handler_ty = HandlerType::from_component(engine, &comp)?;
+            Ok(HttpInstancePre::Component(
+                engine.instantiate_pre(&comp)?,
+                handler_ty,
+            ))
         }
     }
 
     async fn instantiate(&self, store: &mut Store) -> Result<HttpInstance> {
         match self {
-            HttpInstancePre::Component(pre) => pre
-                .instantiate_async(store)
-                .await
-                .map(HttpInstance::Component),
+            HttpInstancePre::Component(pre, ty) => Ok(HttpInstance::Component(
+                pre.instantiate_async(store).await?,
+                *ty,
+            )),
             HttpInstancePre::Module(pre) => {
                 pre.instantiate_async(store).await.map(HttpInstance::Module)
             }
@@ -585,71 +590,63 @@ pub struct HttpRuntimeData {
 impl HttpRuntimeData {
     fn chain_request(
         data: &mut spin_core::Data<Self>,
-        request: wasmtime_wasi_http::types::OutgoingRequest,
+        request: Request<HyperOutgoingBody>,
+        config: wasmtime_wasi_http::types::OutgoingRequestConfig,
         component_id: String,
-    ) -> wasmtime::Result<
-        wasmtime::component::Resource<wasmtime_wasi_http::types::HostFutureIncomingResponse>,
-    > {
-        use wasmtime_wasi_http::types::IncomingResponseInternal;
+    ) -> HttpResult<wasmtime_wasi_http::types::HostFutureIncomingResponse> {
+        use wasmtime_wasi_http::types::IncomingResponse;
 
         let this = data.as_ref();
 
-        let chained_handler = this.chained_handler.clone().ok_or(wasmtime::Error::msg(
-            "Internal error: internal request chaining not prepared (engine not assigned)",
-        ))?;
+        let chained_handler =
+            this.chained_handler
+                .clone()
+                .ok_or(HttpError::trap(wasmtime::Error::msg(
+                    "Internal error: internal request chaining not prepared (engine not assigned)",
+                )))?;
 
         let engine = chained_handler.engine;
         let handler = chained_handler.executor;
 
         let base = "/";
-        let route_match = RouteMatch::synthetic(&component_id, request.request.uri().path());
+        let route_match = RouteMatch::synthetic(&component_id, request.uri().path());
 
-        let client_addr = std::net::SocketAddr::from_str("0.0.0.0:0")?;
+        let client_addr = std::net::SocketAddr::from_str("0.0.0.0:0").unwrap();
 
-        let between_bytes_timeout = request.between_bytes_timeout;
-        // The IncomingResponseInternal type formally needs a "worker" join handle, but
-        // in a chained use case it doesn't seem to do anything.
-        let worker = Arc::new(wasmtime_wasi::preview2::spawn(async {}));
-
-        let req = request.request;
+        let between_bytes_timeout = config.between_bytes_timeout;
 
         let resp_fut = async move {
             match handler
-                .execute(engine.clone(), base, &route_match, req, client_addr)
+                .execute(engine.clone(), base, &route_match, request, client_addr)
                 .await
             {
-                Ok(resp) => Ok(Ok(IncomingResponseInternal {
+                Ok(resp) => Ok(Ok(IncomingResponse {
                     resp,
                     between_bytes_timeout,
-                    worker,
+                    worker: None,
                 })),
                 Err(e) => Err(wasmtime::Error::msg(e)),
             }
         };
 
-        let handle = wasmtime_wasi::preview2::spawn(resp_fut);
-        Ok(data.table().push(HostFutureIncomingResponse::new(handle))?)
+        let handle = wasmtime_wasi::runtime::spawn(resp_fut);
+        Ok(HostFutureIncomingResponse::Pending(handle))
     }
 }
 
-fn parse_chaining_target(request: &wasmtime_wasi_http::types::OutgoingRequest) -> Option<String> {
-    parse_service_chaining_target(request.request.uri())
+fn parse_chaining_target(request: &Request<HyperOutgoingBody>) -> Option<String> {
+    parse_service_chaining_target(request.uri())
 }
 
 impl OutboundWasiHttpHandler for HttpRuntimeData {
     fn send_request(
         data: &mut spin_core::Data<Self>,
-        mut request: wasmtime_wasi_http::types::OutgoingRequest,
-    ) -> wasmtime::Result<
-        wasmtime::component::Resource<wasmtime_wasi_http::types::HostFutureIncomingResponse>,
-    >
-    where
-        Self: Sized,
-    {
+        mut request: Request<HyperOutgoingBody>,
+        mut config: wasmtime_wasi_http::types::OutgoingRequestConfig,
+    ) -> HttpResult<wasmtime_wasi_http::types::HostFutureIncomingResponse> {
         let this = data.as_mut();
 
         let is_relative_url = request
-            .request
             .uri()
             .authority()
             .map(|a| a.host().trim() == "")
@@ -658,7 +655,6 @@ impl OutboundWasiHttpHandler for HttpRuntimeData {
             // Origin must be set in the incoming http handler
             let origin = this.origin.clone().unwrap();
             let path_and_query = request
-                .request
                 .uri()
                 .path_and_query()
                 .map(|p| p.as_str())
@@ -668,31 +664,31 @@ impl OutboundWasiHttpHandler for HttpRuntimeData {
                 // origin together with the path and query must be a valid URI
                 .unwrap();
             let host = format!("{}:{}", uri.host().unwrap(), uri.port().unwrap());
-            let headers = request.request.headers_mut();
-            headers.insert(HOST, HeaderValue::from_str(&host)?);
+            let headers = request.headers_mut();
+            headers.insert(
+                HOST,
+                HeaderValue::from_str(&host).map_err(|_| ErrorCode::HttpProtocolError)?,
+            );
 
-            request.use_tls = uri
+            config.use_tls = uri
                 .scheme()
                 .map(|s| s == &Scheme::HTTPS)
                 .unwrap_or_default();
             // We know that `uri` has an authority because we set it above
-            uri.authority()
-                .unwrap()
-                .as_str()
-                .clone_into(&mut request.authority);
-            *request.request.uri_mut() = uri;
+            *request.uri_mut() = uri;
         }
 
-        let uri = request.request.uri();
+        let uri = request.uri();
         let uri_string = uri.to_string();
         let unallowed_relative =
             is_relative_url && !this.allowed_hosts.allows_relative_url(&["http", "https"]);
         let unallowed_absolute = !is_relative_url
-            && !this
-                .allowed_hosts
-                .allows(&OutboundUrl::parse(uri_string, "https")?);
+            && !this.allowed_hosts.allows(
+                &OutboundUrl::parse(uri_string, "https")
+                    .map_err(|_| ErrorCode::HttpRequestUriInvalid)?,
+            );
         if unallowed_relative || unallowed_absolute {
-            tracing::log::error!("Destination not allowed: {}", request.request.uri());
+            tracing::error!("Destination not allowed: {}", request.uri());
             let host = if unallowed_absolute {
                 // Safe to unwrap because absolute urls have a host by definition.
                 let host = uri.authority().map(|a| a.host()).unwrap();
@@ -715,15 +711,15 @@ impl OutboundWasiHttpHandler for HttpRuntimeData {
                 "self".into()
             };
             eprintln!("To allow requests, add 'allowed_outbound_hosts = [\"{}\"]' to the manifest component section.", host);
-            anyhow::bail!("destination-not-allowed (error 1)")
+            return Err(ErrorCode::HttpRequestDenied.into());
         }
 
         if let Some(component_id) = parse_chaining_target(&request) {
-            return Self::chain_request(data, request, component_id);
+            return Self::chain_request(data, request, config, component_id);
         }
 
         let current_span = tracing::Span::current();
-        let uri = request.request.uri();
+        let uri = request.uri();
         if let Some(authority) = uri.authority() {
             current_span.record("server.address", authority.host());
             if let Some(port) = authority.port() {
@@ -734,32 +730,19 @@ impl OutboundWasiHttpHandler for HttpRuntimeData {
         // TODO: This is a temporary workaround to make sure that outbound task is instrumented.
         // Once Wasmtime gives us the ability to do the spawn ourselves we can just call .instrument
         // and won't have to do this workaround.
-        let response_handle = wasmtime_wasi_http::types::default_send_request(data, request)?;
-        let response = data.table().get_mut(&response_handle)?;
-        *response = match std::mem::replace(response, HostFutureIncomingResponse::Consumed) {
-            HostFutureIncomingResponse::Pending(handle) => {
-                HostFutureIncomingResponse::Pending(wasmtime_wasi::preview2::spawn(
-                    async move {
-                        let res: Result<
-                            Result<
-                                wasmtime_wasi_http::types::IncomingResponseInternal,
-                                wasmtime_wasi_http::bindings::http::types::ErrorCode,
-                            >,
-                            anyhow::Error,
-                        > = handle.await;
-                        if let Ok(Ok(res)) = &res {
-                            tracing::Span::current()
-                                .record("http.response.status_code", res.resp.status().as_u16());
-                        }
-                        res
-                    }
-                    .in_current_span(),
-                ))
+        let response_handle = async move {
+            let res =
+                wasmtime_wasi_http::types::default_send_request_handler(request, config).await;
+            if let Ok(res) = &res {
+                tracing::Span::current()
+                    .record("http.response.status_code", res.resp.status().as_u16());
             }
-            other => other,
-        };
-
-        Ok(response_handle)
+            Ok(res)
+        }
+        .in_current_span();
+        Ok(HostFutureIncomingResponse::Pending(
+            wasmtime_wasi::runtime::spawn(response_handle),
+        ))
     }
 }
 

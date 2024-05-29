@@ -179,7 +179,7 @@ fn test_engine() -> Engine<()> {
     let mut builder = Engine::builder(&test_config()).unwrap();
     builder.add_host_component(MultiplierHostComponent).unwrap();
     builder
-        .link_import(|l, _| wasmtime_wasi::preview2::command::add_to_linker(l))
+        .link_import(|l, _| wasmtime_wasi::add_to_linker_async(l))
         .unwrap();
     builder
         .link_import(|l, _| spin_core::wasi_2023_10_18::add_to_linker(l))
@@ -261,8 +261,8 @@ impl HostComponent for MultiplierHostComponent {
 struct Multiplier(i32);
 
 impl multiplier::imports::Host for Multiplier {
-    fn multiply(&mut self, a: i32) -> wasmtime::Result<i32> {
-        Ok(self.0 * a)
+    fn multiply(&mut self, a: i32) -> i32 {
+        self.0 * a
     }
 }
 

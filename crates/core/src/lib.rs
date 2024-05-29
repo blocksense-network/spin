@@ -15,13 +15,16 @@ mod store;
 pub mod wasi_2023_10_18;
 pub mod wasi_2023_11_10;
 
+use std::sync::OnceLock;
 use std::{path::PathBuf, time::Duration};
 
 use anyhow::Result;
 use crossbeam_channel::Sender;
+use http::Request;
 use tracing::{field::Empty, instrument};
 use wasmtime::{InstanceAllocationStrategy, PoolingAllocationConfig};
-use wasmtime_wasi::preview2::ResourceTable;
+use wasmtime_wasi::ResourceTable;
+use wasmtime_wasi_http::body::HyperOutgoingBody;
 use wasmtime_wasi_http::types::{default_send_request, WasiHttpCtx, WasiHttpView};
 
 use self::host_component::{HostComponents, HostComponentsBuilder};
@@ -32,7 +35,7 @@ pub use wasmtime::{
     component::{Component, Instance},
     Instance as ModuleInstance, Module, Trap,
 };
-pub use wasmtime_wasi::preview2::I32Exit;
+pub use wasmtime_wasi::I32Exit;
 
 pub use host_component::{
     AnyHostComponentDataHandle, HostComponent, HostComponentDataHandle, HostComponentsData,
@@ -92,42 +95,44 @@ impl Default for Config {
         inner.epoch_interruption(true);
         inner.wasm_component_model(true);
 
-        // By default enable the pooling instance allocator in Wasmtime. This
-        // drastically reduces syscall/kernel overhead for wasm execution,
-        // especially in async contexts where async stacks must be allocated.
-        // The general goal here is that the default settings here rarely, if
-        // ever, need to be modified. As a result there aren't fine-grained
-        // knobs for each of these settings just yet and instead they're
-        // generally set to defaults. Environment-variable-based fallbacks are
-        // supported though as an escape valve for if this is a problem.
-        let mut pooling_config = PoolingAllocationConfig::default();
-        pooling_config
-            .total_component_instances(env("SPIN_WASMTIME_INSTANCE_COUNT", 1_000))
-            // This number accounts for internal data structures that Wasmtime allocates for each instance.
-            // Instance allocation is proportional to the number of "things" in a wasm module like functions,
-            // globals, memories, etc. Instance allocations are relatively small and are largely inconsequential
-            // compared to other runtime state, but a number needs to be chosen here so a relatively large threshold
-            // of 10MB is arbitrarily chosen. It should be unlikely that any reasonably-sized module hits this limit.
-            .max_component_instance_size(
-                env("SPIN_WASMTIME_INSTANCE_SIZE", (10 * MB) as u32) as usize
-            )
-            .max_core_instances_per_component(env("SPIN_WASMTIME_CORE_INSTANCE_COUNT", 200))
-            .max_tables_per_component(env("SPIN_WASMTIME_INSTANCE_TABLES", 20))
-            .table_elements(env("SPIN_WASMTIME_INSTANCE_TABLE_ELEMENTS", 30_000))
-            // The number of memories an instance can have effectively limits the number of inner components
-            // a composed component can have (since each inner component has its own memory). We default to 32 for now, and
-            // we'll see how often this limit gets reached.
-            .max_memories_per_component(env("SPIN_WASMTIME_INSTANCE_MEMORIES", 32))
-            .total_memories(env("SPIN_WASMTIME_TOTAL_MEMORIES", 1_000))
-            .total_tables(env("SPIN_WASMTIME_TOTAL_TABLES", 2_000))
-            // Nothing is lost from allowing the maximum size of memory for
-            // all instance as it's still limited through other the normal
-            // `StoreLimitsAsync` accounting method too.
-            .memory_pages(4 * GB / WASM_PAGE_SIZE)
-            // These numbers are completely arbitrary at something above 0.
-            .linear_memory_keep_resident((2 * MB) as usize)
-            .table_keep_resident((MB / 2) as usize);
-        inner.allocation_strategy(InstanceAllocationStrategy::Pooling(pooling_config));
+        if use_pooling_allocator_by_default() {
+            // By default enable the pooling instance allocator in Wasmtime. This
+            // drastically reduces syscall/kernel overhead for wasm execution,
+            // especially in async contexts where async stacks must be allocated.
+            // The general goal here is that the default settings here rarely, if
+            // ever, need to be modified. As a result there aren't fine-grained
+            // knobs for each of these settings just yet and instead they're
+            // generally set to defaults. Environment-variable-based fallbacks are
+            // supported though as an escape valve for if this is a problem.
+            let mut pooling_config = PoolingAllocationConfig::default();
+            pooling_config
+                .total_component_instances(env("SPIN_WASMTIME_INSTANCE_COUNT", 1_000))
+                // This number accounts for internal data structures that Wasmtime allocates for each instance.
+                // Instance allocation is proportional to the number of "things" in a wasm module like functions,
+                // globals, memories, etc. Instance allocations are relatively small and are largely inconsequential
+                // compared to other runtime state, but a number needs to be chosen here so a relatively large threshold
+                // of 10MB is arbitrarily chosen. It should be unlikely that any reasonably-sized module hits this limit.
+                .max_component_instance_size(
+                    env("SPIN_WASMTIME_INSTANCE_SIZE", (10 * MB) as u32) as usize
+                )
+                .max_core_instances_per_component(env("SPIN_WASMTIME_CORE_INSTANCE_COUNT", 200))
+                .max_tables_per_component(env("SPIN_WASMTIME_INSTANCE_TABLES", 20))
+                .table_elements(env("SPIN_WASMTIME_INSTANCE_TABLE_ELEMENTS", 30_000))
+                // The number of memories an instance can have effectively limits the number of inner components
+                // a composed component can have (since each inner component has its own memory). We default to 32 for now, and
+                // we'll see how often this limit gets reached.
+                .max_memories_per_component(env("SPIN_WASMTIME_INSTANCE_MEMORIES", 32))
+                .total_memories(env("SPIN_WASMTIME_TOTAL_MEMORIES", 1_000))
+                .total_tables(env("SPIN_WASMTIME_TOTAL_TABLES", 2_000))
+                // Nothing is lost from allowing the maximum size of memory for
+                // all instance as it's still limited through other the normal
+                // `StoreLimitsAsync` accounting method too.
+                .memory_pages(4 * GB / WASM_PAGE_SIZE)
+                // These numbers are completely arbitrary at something above 0.
+                .linear_memory_keep_resident((2 * MB) as usize)
+                .table_keep_resident((MB / 2) as usize);
+            inner.allocation_strategy(InstanceAllocationStrategy::Pooling(pooling_config));
+        }
 
         return Self { inner };
 
@@ -140,6 +145,64 @@ impl Default for Config {
             }
         }
     }
+}
+
+/// The pooling allocator is tailor made for the `spin up` use case, so
+/// try to use it when we can. The main cost of the pooling allocator, however,
+/// is the virtual memory required to run it. Not all systems support the same
+/// amount of virtual memory, for example some aarch64 and riscv64 configuration
+/// only support 39 bits of virtual address space.
+///
+/// The pooling allocator, by default, will request 1000 linear memories each
+/// sized at 6G per linear memory. This is 6T of virtual memory which ends up
+/// being about 42 bits of the address space. This exceeds the 39 bit limit of
+/// some systems, so there the pooling allocator will fail by default.
+///
+/// This function attempts to dynamically determine the hint for the pooling
+/// allocator. This returns `true` if the pooling allocator should be used
+/// by default, or `false` otherwise.
+///
+/// The method for testing this is to allocate a 0-sized 64-bit linear memory
+/// with a maximum size that's N bits large where we force all memories to be
+/// static. This should attempt to acquire N bits of the virtual address space.
+/// If successful that should mean that the pooling allocator is OK to use, but
+/// if it fails then the pooling allocator is not used and the normal mmap-based
+/// implementation is used instead.
+fn use_pooling_allocator_by_default() -> bool {
+    static USE_POOLING: OnceLock<bool> = OnceLock::new();
+    const BITS_TO_TEST: u32 = 42;
+
+    *USE_POOLING.get_or_init(|| {
+        // Enable manual control through env vars as an escape hatch
+        match std::env::var("SPIN_WASMTIME_POOLING") {
+            Ok(s) if s == "1" => return true,
+            Ok(s) if s == "0" => return false,
+            Ok(s) => panic!("SPIN_WASMTIME_POOLING={s} not supported, only 1/0 supported"),
+            Err(_) => {}
+        }
+
+        // If the env var isn't set then perform the dynamic runtime probe
+        let mut config = wasmtime::Config::new();
+        config.wasm_memory64(true);
+        config.static_memory_maximum_size(1 << BITS_TO_TEST);
+
+        match wasmtime::Engine::new(&config) {
+            Ok(engine) => {
+                let mut store = wasmtime::Store::new(&engine, ());
+                // NB: the maximum size is in wasm pages so take out the 16-bits
+                // of wasm page size here from the maximum size.
+                let ty = wasmtime::MemoryType::new64(0, Some(1 << (BITS_TO_TEST - 16)));
+                wasmtime::Memory::new(&mut store, ty).is_ok()
+            }
+            Err(_) => {
+                tracing::debug!(
+                    "unable to create an engine to test the pooling \
+                     allocator, disabling pooling allocation"
+                );
+                false
+            }
+        }
+    })
 }
 
 /// Host state data associated with individual [Store]s and [Instance]s.
@@ -170,12 +233,12 @@ impl<T> AsMut<T> for Data<T> {
     }
 }
 
-impl<T: Send> wasmtime_wasi::preview2::WasiView for Data<T> {
+impl<T: Send> wasmtime_wasi::WasiView for Data<T> {
     fn table(&mut self) -> &mut ResourceTable {
         &mut self.table
     }
 
-    fn ctx(&mut self) -> &mut wasmtime_wasi::preview2::WasiCtx {
+    fn ctx(&mut self) -> &mut wasmtime_wasi::WasiCtx {
         match &mut self.wasi {
             Wasi::Preview1(_) => panic!("using WASI Preview 1 functions with Preview 2 store"),
             Wasi::Preview2 { wasi_ctx, .. } => wasi_ctx,
@@ -195,18 +258,29 @@ impl<T: Send + OutboundWasiHttpHandler> WasiHttpView for Data<T> {
         &mut self.table
     }
 
-    #[instrument(name = "spin_core.send_request", skip_all, fields(otel.kind = "client", url.full = %request.request.uri(), http.request.method = %request.request.method(), otel.name = %request.request.method(), http.response.status_code = Empty, server.address = Empty, server.port = Empty))]
+    #[instrument(
+        name = "spin_core.send_request",
+        skip_all,
+        fields(
+            otel.kind = "client",
+            url.full = %request.uri(),
+            http.request.method = %request.method(),
+            otel.name = %request.method(),
+            http.response.status_code = Empty,
+            server.address = Empty,
+            server.port = Empty,
+        ),
+    )]
     fn send_request(
         &mut self,
-        mut request: wasmtime_wasi_http::types::OutgoingRequest,
-    ) -> wasmtime::Result<
-        wasmtime::component::Resource<wasmtime_wasi_http::types::HostFutureIncomingResponse>,
-    >
+        mut request: Request<HyperOutgoingBody>,
+        config: wasmtime_wasi_http::types::OutgoingRequestConfig,
+    ) -> wasmtime_wasi_http::HttpResult<wasmtime_wasi_http::types::HostFutureIncomingResponse>
     where
         Self: Sized,
     {
-        spin_telemetry::inject_trace_context(&mut request.request);
-        T::send_request(self, request)
+        spin_telemetry::inject_trace_context(&mut request);
+        T::send_request(self, request, config)
     }
 }
 
@@ -215,25 +289,23 @@ pub trait OutboundWasiHttpHandler {
     /// Send the request
     fn send_request(
         data: &mut Data<Self>,
-        request: wasmtime_wasi_http::types::OutgoingRequest,
-    ) -> wasmtime::Result<
-        wasmtime::component::Resource<wasmtime_wasi_http::types::HostFutureIncomingResponse>,
-    >
+        request: Request<HyperOutgoingBody>,
+        config: wasmtime_wasi_http::types::OutgoingRequestConfig,
+    ) -> wasmtime_wasi_http::HttpResult<wasmtime_wasi_http::types::HostFutureIncomingResponse>
     where
         Self: Sized;
 }
 
 impl OutboundWasiHttpHandler for () {
     fn send_request(
-        data: &mut Data<Self>,
-        request: wasmtime_wasi_http::types::OutgoingRequest,
-    ) -> wasmtime::Result<
-        wasmtime::component::Resource<wasmtime_wasi_http::types::HostFutureIncomingResponse>,
-    >
+        _data: &mut Data<Self>,
+        request: Request<HyperOutgoingBody>,
+        config: wasmtime_wasi_http::types::OutgoingRequestConfig,
+    ) -> wasmtime_wasi_http::HttpResult<wasmtime_wasi_http::types::HostFutureIncomingResponse>
     where
         Self: Sized,
     {
-        default_send_request(data, request)
+        Ok(default_send_request(request, config))
     }
 }
 
@@ -261,9 +333,13 @@ impl<T: Send + Sync + OutboundWasiHttpHandler> EngineBuilder<T> {
         let linker: Linker<T> = Linker::new(&engine);
         let mut module_linker = ModuleLinker::new(&engine);
 
-        wasmtime_wasi::tokio::add_to_linker(&mut module_linker, |data| match &mut data.wasi {
-            Wasi::Preview1(ctx) => ctx,
-            Wasi::Preview2 { .. } => panic!("using WASI Preview 2 functions with Preview 1 store"),
+        wasi_common_preview1::tokio::add_to_linker(&mut module_linker, |data| {
+            match &mut data.wasi {
+                Wasi::Preview1(ctx) => ctx,
+                Wasi::Preview2 { .. } => {
+                    panic!("using WASI Preview 2 functions with Preview 1 store")
+                }
+            }
         })?;
 
         Ok(Self {

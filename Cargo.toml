@@ -6,13 +6,13 @@ edition = { workspace = true }
 license = { workspace = true }
 
 [workspace.package]
-version = "2.5.0"
+version = "2.6.0-pre0"
 authors = ["Fermyon Engineering <engineering@fermyon.com>"]
 edition = "2021"
 license = "Apache-2.0 WITH LLVM-exception"
 homepage = "https://developer.fermyon.com/spin"
 repository = "https://github.com/fermyon/spin"
-rust-version = "1.74"
+rust-version = "1.76"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -61,7 +61,7 @@ spin-locked-app = { path = "crates/locked-app" }
 spin-manifest = { path = "crates/manifest" }
 spin-oci = { path = "crates/oci" }
 spin-plugins = { path = "crates/plugins" }
-spin-telemetry = { path = "crates/telemetry" }
+spin-telemetry = { path = "crates/telemetry", features = ["tracing-log-compat"] }
 spin-templates = { path = "crates/templates" }
 spin-trigger = { path = "crates/trigger" }
 spin-trigger-http = { path = "crates/trigger-http" }
@@ -72,7 +72,6 @@ tempfile = "3.8.0"
 tokio = { version = "1.23", features = ["full"] }
 toml = "0.6"
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3.7", features = ["env-filter"] }
 url = "2.2.2"
 uuid = { version = "^1.0", features = ["v4"] }
 wasmtime = { workspace = true }
@@ -127,10 +126,10 @@ hyper = { version = "1.0.0", features = ["full"] }
 reqwest = { version = "0.11", features = ["stream", "blocking"] }
 tracing = { version = "0.1", features = ["log"] }
 
-wasi-common-preview1 = { version = "18.0.4", package = "wasi-common" }
-wasmtime = "18.0.4"
-wasmtime-wasi = { version = "18.0.4", features = ["tokio"] }
-wasmtime-wasi-http = "18.0.4"
+wasi-common-preview1 = { version = "21.0.0", package = "wasi-common", features = ["tokio"] }
+wasmtime = "21.0.0"
+wasmtime-wasi = "21.0.0"
+wasmtime-wasi-http = "21.0.0"
 
 spin-componentize = { path = "crates/componentize" }
 

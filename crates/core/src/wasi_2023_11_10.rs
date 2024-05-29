@@ -4,13 +4,13 @@ use super::wasi_2023_10_18::{convert, convert_result};
 use anyhow::Result;
 use async_trait::async_trait;
 use wasmtime::component::{Linker, Resource};
-use wasmtime_wasi::preview2::WasiView;
+use wasmtime_wasi::WasiView;
 use wasmtime_wasi_http::WasiHttpView;
 
 mod latest {
-    pub use wasmtime_wasi::preview2::bindings::wasi::*;
+    pub use wasmtime_wasi::bindings::*;
     pub mod http {
-        pub use wasmtime_wasi_http::bindings::wasi::http::*;
+        pub use wasmtime_wasi_http::bindings::http::*;
     }
 }
 
@@ -96,6 +96,8 @@ mod bindings {
             "wasi:http/types/future-trailers": latest::http::types::FutureTrailers,
             "wasi:http/types/request-options": latest::http::types::RequestOptions,
         },
+        trappable_imports: true,
+        skip_mut_forwarding_impls: true,
     });
 }
 
@@ -146,36 +148,43 @@ where
     T: WasiView + WasiHttpView,
 {
     // interfaces from the "command" world
-    wasi::clocks::monotonic_clock::add_to_linker(linker, |t| t)?;
-    wasi::clocks::wall_clock::add_to_linker(linker, |t| t)?;
-    wasi::filesystem::types::add_to_linker(linker, |t| t)?;
-    wasi::filesystem::preopens::add_to_linker(linker, |t| t)?;
-    wasi::io::error::add_to_linker(linker, |t| t)?;
-    wasi::io::poll::add_to_linker(linker, |t| t)?;
-    wasi::io::streams::add_to_linker(linker, |t| t)?;
-    wasi::random::random::add_to_linker(linker, |t| t)?;
-    wasi::random::insecure::add_to_linker(linker, |t| t)?;
-    wasi::random::insecure_seed::add_to_linker(linker, |t| t)?;
-    wasi::cli::exit::add_to_linker(linker, |t| t)?;
-    wasi::cli::environment::add_to_linker(linker, |t| t)?;
-    wasi::cli::stdin::add_to_linker(linker, |t| t)?;
-    wasi::cli::stdout::add_to_linker(linker, |t| t)?;
-    wasi::cli::stderr::add_to_linker(linker, |t| t)?;
-    wasi::cli::terminal_input::add_to_linker(linker, |t| t)?;
-    wasi::cli::terminal_output::add_to_linker(linker, |t| t)?;
-    wasi::cli::terminal_stdin::add_to_linker(linker, |t| t)?;
-    wasi::cli::terminal_stdout::add_to_linker(linker, |t| t)?;
-    wasi::cli::terminal_stderr::add_to_linker(linker, |t| t)?;
-    wasi::sockets::tcp::add_to_linker(linker, |t| t)?;
-    wasi::sockets::tcp_create_socket::add_to_linker(linker, |t| t)?;
-    wasi::sockets::udp::add_to_linker(linker, |t| t)?;
-    wasi::sockets::udp_create_socket::add_to_linker(linker, |t| t)?;
-    wasi::sockets::instance_network::add_to_linker(linker, |t| t)?;
-    wasi::sockets::network::add_to_linker(linker, |t| t)?;
-    wasi::sockets::ip_name_lookup::add_to_linker(linker, |t| t)?;
+    fn project<T, F>(f: F) -> F
+    where
+        F: Fn(&mut T) -> &mut T,
+    {
+        f
+    }
+    let closure = project::<T, _>(|t| t);
+    wasi::clocks::monotonic_clock::add_to_linker_get_host(linker, closure)?;
+    wasi::clocks::wall_clock::add_to_linker_get_host(linker, closure)?;
+    wasi::filesystem::types::add_to_linker_get_host(linker, closure)?;
+    wasi::filesystem::preopens::add_to_linker_get_host(linker, closure)?;
+    wasi::io::error::add_to_linker_get_host(linker, closure)?;
+    wasi::io::poll::add_to_linker_get_host(linker, closure)?;
+    wasi::io::streams::add_to_linker_get_host(linker, closure)?;
+    wasi::random::random::add_to_linker_get_host(linker, closure)?;
+    wasi::random::insecure::add_to_linker_get_host(linker, closure)?;
+    wasi::random::insecure_seed::add_to_linker_get_host(linker, closure)?;
+    wasi::cli::exit::add_to_linker_get_host(linker, closure)?;
+    wasi::cli::environment::add_to_linker_get_host(linker, closure)?;
+    wasi::cli::stdin::add_to_linker_get_host(linker, closure)?;
+    wasi::cli::stdout::add_to_linker_get_host(linker, closure)?;
+    wasi::cli::stderr::add_to_linker_get_host(linker, closure)?;
+    wasi::cli::terminal_input::add_to_linker_get_host(linker, closure)?;
+    wasi::cli::terminal_output::add_to_linker_get_host(linker, closure)?;
+    wasi::cli::terminal_stdin::add_to_linker_get_host(linker, closure)?;
+    wasi::cli::terminal_stdout::add_to_linker_get_host(linker, closure)?;
+    wasi::cli::terminal_stderr::add_to_linker_get_host(linker, closure)?;
+    wasi::sockets::tcp::add_to_linker_get_host(linker, closure)?;
+    wasi::sockets::tcp_create_socket::add_to_linker_get_host(linker, closure)?;
+    wasi::sockets::udp::add_to_linker_get_host(linker, closure)?;
+    wasi::sockets::udp_create_socket::add_to_linker_get_host(linker, closure)?;
+    wasi::sockets::instance_network::add_to_linker_get_host(linker, closure)?;
+    wasi::sockets::network::add_to_linker_get_host(linker, closure)?;
+    wasi::sockets::ip_name_lookup::add_to_linker_get_host(linker, closure)?;
 
-    wasi::http::types::add_to_linker(linker, |t| t)?;
-    wasi::http::outgoing_handler::add_to_linker(linker, |t| t)?;
+    wasi::http::types::add_to_linker_get_host(linker, closure)?;
+    wasi::http::outgoing_handler::add_to_linker_get_host(linker, closure)?;
     Ok(())
 }
 
@@ -658,19 +667,19 @@ where
 
 fn convert_stream_result<T, T2>(
     view: &mut dyn WasiView,
-    result: Result<T, wasmtime_wasi::preview2::StreamError>,
+    result: Result<T, wasmtime_wasi::StreamError>,
 ) -> wasmtime::Result<Result<T2, StreamError>>
 where
     T2: From<T>,
 {
     match result {
         Ok(e) => Ok(Ok(e.into())),
-        Err(wasmtime_wasi::preview2::StreamError::Closed) => Ok(Err(StreamError::Closed)),
-        Err(wasmtime_wasi::preview2::StreamError::LastOperationFailed(e)) => {
+        Err(wasmtime_wasi::StreamError::Closed) => Ok(Err(StreamError::Closed)),
+        Err(wasmtime_wasi::StreamError::LastOperationFailed(e)) => {
             let e = view.table().push(e)?;
             Ok(Err(StreamError::LastOperationFailed(e)))
         }
-        Err(wasmtime_wasi::preview2::StreamError::Trap(e)) => Err(e),
+        Err(wasmtime_wasi::StreamError::Trap(e)) => Err(e),
     }
 }
 
@@ -1570,7 +1579,7 @@ where
 
 impl<T> wasi::http::types::Host for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn http_error_code(
         &mut self,
@@ -1582,7 +1591,7 @@ where
 
 impl<T> wasi::http::types::HostRequestOptions for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn new(&mut self) -> wasmtime::Result<Resource<RequestOptions>> {
         <T as latest::http::types::HostRequestOptions>::new(self)
@@ -1644,7 +1653,7 @@ where
 
 impl<T> wasi::http::types::HostFields for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn new(&mut self) -> wasmtime::Result<Resource<Fields>> {
         <T as latest::http::types::HostFields>::new(self)
@@ -1706,7 +1715,7 @@ where
 
 impl<T> wasi::http::types::HostIncomingRequest for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn method(&mut self, self_: Resource<IncomingRequest>) -> wasmtime::Result<Method> {
         <T as latest::http::types::HostIncomingRequest>::method(self, self_).map(|e| e.into())
@@ -1746,7 +1755,7 @@ where
 
 impl<T> wasi::http::types::HostIncomingResponse for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn status(&mut self, self_: Resource<IncomingResponse>) -> wasmtime::Result<StatusCode> {
         <T as latest::http::types::HostIncomingResponse>::status(self, self_)
@@ -1773,7 +1782,7 @@ where
 
 impl<T> wasi::http::types::HostIncomingBody for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn stream(
         &mut self,
@@ -1796,7 +1805,7 @@ where
 
 impl<T> wasi::http::types::HostOutgoingRequest for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn new(&mut self, headers: Resource<Headers>) -> wasmtime::Result<Resource<OutgoingRequest>> {
         <T as latest::http::types::HostOutgoingRequest>::new(self, headers)
@@ -1880,7 +1889,7 @@ where
 
 impl<T> wasi::http::types::HostOutgoingResponse for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn new(&mut self, headers: Resource<Headers>) -> wasmtime::Result<Resource<OutgoingResponse>> {
         let headers = <T as latest::http::types::HostFields>::clone(self, headers)?;
@@ -1920,7 +1929,7 @@ where
 
 impl<T> wasi::http::types::HostOutgoingBody for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn write(
         &mut self,
@@ -1934,8 +1943,10 @@ where
         this: Resource<OutgoingBody>,
         trailers: Option<Resource<Trailers>>,
     ) -> wasmtime::Result<Result<(), HttpErrorCode>> {
-        <T as latest::http::types::HostOutgoingBody>::finish(self, this, trailers)
-            .map(|r| r.map_err(|e| e.into()))
+        match <T as latest::http::types::HostOutgoingBody>::finish(self, this, trailers) {
+            Ok(()) => Ok(Ok(())),
+            Err(e) => Ok(Err(e.downcast()?.into())),
+        }
     }
 
     fn drop(&mut self, rep: Resource<OutgoingBody>) -> wasmtime::Result<()> {
@@ -1945,7 +1956,7 @@ where
 
 impl<T> wasi::http::types::HostResponseOutparam for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn set(
         &mut self,
@@ -1966,7 +1977,7 @@ where
 
 impl<T> wasi::http::types::HostFutureTrailers for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn subscribe(
         &mut self,
@@ -1994,7 +2005,7 @@ where
 
 impl<T> wasi::http::types::HostFutureIncomingResponse for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn get(
         &mut self,
@@ -2023,16 +2034,16 @@ where
 
 impl<T> wasi::http::outgoing_handler::Host for T
 where
-    T: WasiHttpView,
+    T: WasiHttpView + Send,
 {
     fn handle(
         &mut self,
         request: Resource<OutgoingRequest>,
         options: Option<Resource<RequestOptions>>,
     ) -> wasmtime::Result<Result<Resource<FutureIncomingResponse>, HttpErrorCode>> {
-        match <T as latest::http::outgoing_handler::Host>::handle(self, request, options)? {
+        match <T as latest::http::outgoing_handler::Host>::handle(self, request, options) {
             Ok(resp) => Ok(Ok(resp)),
-            Err(e) => Ok(Err(e.into())),
+            Err(e) => Ok(Err(e.downcast()?.into())),
         }
     }
 }

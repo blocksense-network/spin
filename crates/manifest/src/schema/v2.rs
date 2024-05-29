@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use spin_serde::FixedVersion;
+use spin_serde::{FixedVersion, LowerSnakeId};
 pub use spin_serde::{KebabId, SnakeId};
 
 pub use super::common::{ComponentBuildConfig, ComponentSource, Variable, WasiFilesMount};
@@ -16,7 +16,7 @@ pub struct AppManifest {
     pub application: AppDetails,
     /// `[variables]`
     #[serde(default, skip_serializing_if = "Map::is_empty")]
-    pub variables: Map<SnakeId, Variable>,
+    pub variables: Map<LowerSnakeId, Variable>,
     /// `[[trigger.<type>]]`
     #[serde(rename = "trigger")]
     pub triggers: Map<String, Vec<Trigger>>,
@@ -106,7 +106,7 @@ pub struct Component {
     pub description: String,
     /// `variables = { name = "{{ app_var }}"}`
     #[serde(default, skip_serializing_if = "Map::is_empty")]
-    pub variables: Map<SnakeId, String>,
+    pub variables: Map<LowerSnakeId, String>,
     /// `environment = { VAR = "value" }`
     #[serde(default, skip_serializing_if = "Map::is_empty")]
     pub environment: Map<String, String>,
@@ -118,10 +118,10 @@ pub struct Component {
     pub exclude_files: Vec<String>,
     /// `allowed_http_hosts = ["example.com"]`
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) allowed_http_hosts: Vec<String>,
+    pub allowed_http_hosts: Vec<String>,
     /// `allowed_outbound_hosts = ["redis://myredishost.com:6379"]`
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) allowed_outbound_hosts: Vec<String>,
+    pub allowed_outbound_hosts: Vec<String>,
     /// `key_value_stores = ["default", "my-store"]`
     #[serde(
         default,
