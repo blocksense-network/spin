@@ -5,36 +5,64 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-utils.url = "github:numtide/flake-utils";
+
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        overlays = [ (import rust-overlay) ];
+  outputs = {
+    self,
+    nixpkgs,
+    rust-overlay,
+    flake-utils,
+    fenix,
+    ...
+  }:
+    flake-utils.lib.eachDefaultSystem (
+      system: let
+        overlays = [(import rust-overlay)];
         pkgs = import nixpkgs {
           inherit system overlays;
         };
         rustTarget = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" "rust-analyzer" ];
-          targets = [ "wasm32-wasi" "wasm32-unknown-unknown" ];
+          extensions = ["rust-src" "rust-analyzer"];
+          targets = ["wasm32-wasi" "wasm32-unknown-unknown"];
         };
-      in
-      with pkgs;
-      {
-        devShells.default = mkShell {
-          buildInputs = [
-            openssl
-            pkg-config
-            rustTarget
-          ] ++ lib.optionals stdenv.isDarwin [
-            darwin.apple_sdk.frameworks.Accelerate
+
+        RustToolchain = with fenix.packages.${pkgs.system};
+        with latest;
+          combine [
+            cargo
+            clippy
+            rust-analyzer
+            rust-src
+            rustc
+            rustfmt
+            targets.wasm32-wasi.latest.rust-std
           ];
+      in
+        with pkgs; {
+          devShells.default = mkShellNoCC {
+            buildInputs =
+              [
+                openssl
+                pkg-config
+                rustTarget
+              ]
+              ++ lib.optionals stdenv.isDarwin [
+                darwin.apple_sdk.frameworks.Accelerate
+              ];
 
-          shellHook = ''
+            packages = [
+              RustToolchain
+            ];
+
+            shellHook = ''
             '';
-          RUST_SRC_PATH = "${rustTarget}/lib/rustlib/src/rust/library";
-
-        };
-      }
+            RUST_SRC_PATH = "${rustTarget}/lib/rustlib/src/rust/library";
+          };
+        }
     );
 }
