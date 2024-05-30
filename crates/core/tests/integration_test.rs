@@ -160,6 +160,28 @@ async fn test_host_component_data_update() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_host_component_nn() {
+    let engine = test_engine();
+    let nn_handle = engine
+        .find_host_component_handle::<NNHostComponent>()
+        .unwrap();
+
+    let stdout = run_core_wasi_test_engine(
+        &engine,
+        ["hello", "GGyci"],
+        |store_builder| {
+            store_builder
+                .host_components_data()
+                .set(nn_handle, NN{});
+        },
+        |_| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(stdout, "Hello bace GGyci!");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 #[cfg(not(tarpaulin))]
 async fn test_panic() {
     let err = run_core_wasi_test(["panic"], |_| {}).await.unwrap_err();
@@ -178,6 +200,7 @@ fn test_config() -> Config {
 fn test_engine() -> Engine<()> {
     let mut builder = Engine::builder(&test_config()).unwrap();
     builder.add_host_component(MultiplierHostComponent).unwrap();
+    builder.add_host_component(NNHostComponent).unwrap();
     builder
         .link_import(|l, _| wasmtime_wasi::add_to_linker_async(l))
         .unwrap();
@@ -210,6 +233,7 @@ async fn run_core_wasi_test_engine<'a>(
     let mut store = store_builder.build()?;
     let module_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/test-programs/core-wasi-test.wasm");
+    println!("module_path = {module_path:?}");
     let component = spin_componentize::componentize_command(&fs::read(module_path).await?)?;
     let component = Component::new(engine.as_ref(), &component)?;
     let instance_pre = engine.instantiate_pre(&component)?;
@@ -265,6 +289,38 @@ impl multiplier::imports::Host for Multiplier {
         self.0 * a
     }
 }
+
+
+#[derive(Clone)]
+struct NNHostComponent;
+
+mod nn {
+    wasmtime::component::bindgen!("nn" in "tests/core-wasi-test/wit");
+}
+
+impl HostComponent for NNHostComponent {
+    type Data = NN;
+
+    fn add_to_linker<T: Send>(
+        linker: &mut spin_core::Linker<T>,
+        get: impl Fn(&mut spin_core::Data<T>) -> &mut Self::Data + Send + Sync + Copy + 'static,
+    ) -> anyhow::Result<()> {
+        nn::hello::add_to_linker(linker, get)
+    }
+
+    fn build_data(&self) -> Self::Data {
+        NN{}
+    }
+}
+
+struct NN {}
+
+impl nn::hello::Host for NN {
+    fn say_hello(&mut self, x: String) -> wasmtime::Result<String> {
+        Ok(format!("Hello bace {x}!"))
+    }
+}
+
 
 // Write with `print!`, required for test output capture
 struct TestWriter(tokio::io::Stdout);

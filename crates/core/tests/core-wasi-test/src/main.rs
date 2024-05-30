@@ -4,17 +4,27 @@
 //! invalid argument(s).
 
 use std::time::Duration;
-
-wit_bindgen::generate!({
-    world: "multiplier",
-    path: "wit/multiplier.wit"
-});
+mod multiplier {
+    wit_bindgen::generate!({
+        world: "multiplier",
+        path: "wit/multiplier.wit"
+    });
+}
+mod nn {
+    wit_bindgen::generate!({
+        world: "nn",
+        path: "wit/nn.wit"
+    });
+}
+use crate::nn::hello::say_hello;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
 fn main() -> Result {
     let mut args = std::env::args();
     let cmd = args.next().expect("cmd");
+    let output = "Gogo".to_string();
+
     match cmd.as_str() {
         "noop" => (),
         "echo" => {
@@ -47,7 +57,12 @@ fn main() -> Result {
         "multiply" => {
             let input: i32 = args.next().expect("input").parse().expect("i32");
             eprintln!("multiply {input}");
-            let output = imports::multiply(input);
+            let output = multiplier::imports::multiply(input);
+            println!("{output}");
+        }
+        "hello" => {
+            let input: String = args.next().expect("input").parse().expect("String");
+            let output = say_hello(&input);
             println!("{output}");
         }
         "sleep" => {
