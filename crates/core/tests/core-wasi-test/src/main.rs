@@ -10,13 +10,13 @@ mod multiplier {
         path: "wit/multiplier.wit"
     });
 }
-mod nn {
+mod hello {
     wit_bindgen::generate!({
-        world: "nn",
-        path: "wit/nn.wit"
+        world: "hello",
+        path: "wit/hello.wit"
     });
 }
-use crate::nn::hello::say_hello;
+use crate::hello::hello::say_hello;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
