@@ -1,7 +1,0 @@
-package test:test;
-
-world nn {
-  import hello: interface {
-     say-hello: func(x: string) -> string;
-  }
-}
