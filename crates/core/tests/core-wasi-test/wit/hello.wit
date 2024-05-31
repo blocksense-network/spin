@@ -1,6 +1,6 @@
 package test:test;
 
-world nn {
+world hello {
   import hello: interface {
      say-hello: func(x: string) -> string;
   }
