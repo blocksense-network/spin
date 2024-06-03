@@ -1,8 +1,12 @@
 
+//use crate::hello_component::hello::test::test::gggg2;
+//use crate::hello_component::gggg2;
+
 pub mod hello {
     wasmtime::component::bindgen!("hello" in "tests/core-wasi-test/wit");
 
     use spin_core::HostComponent;
+    use test::test::gggg2;
 
     #[derive(Clone)]
     pub struct HelloHostComponent;
@@ -14,7 +18,7 @@ pub mod hello {
             linker: &mut spin_core::Linker<T>,
             get: impl Fn(&mut spin_core::Data<T>) -> &mut Self::Data + Send + Sync + Copy + 'static,
         ) -> anyhow::Result<()> {
-            hello::add_to_linker(linker, get)
+            Hello::add_to_linker(linker, get)
         }
 
         fn build_data(&self) -> Self::Data {
@@ -24,9 +28,10 @@ pub mod hello {
 
     pub struct HelloHostImpl {}
 
-    impl hello::Host for HelloHostImpl {
+    impl gggg2::Host for HelloHostImpl {
         fn say_hello(&mut self, x: String) -> wasmtime::Result<String> {
             Ok(format!("Hello bace {x}!"))
         }
     }
+
 }
