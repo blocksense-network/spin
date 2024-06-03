@@ -16,14 +16,14 @@ mod hello {
         path: "wit/hello.wit"
     });
 }
-use crate::hello::hello::say_hello;
+
+use crate::hello::test::test::gggg2::say_hello;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
 fn main() -> Result {
     let mut args = std::env::args();
     let cmd = args.next().expect("cmd");
-    let output = "Gogo".to_string();
 
     match cmd.as_str() {
         "noop" => (),
