@@ -5208,6 +5208,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "openvino"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24bd3a7ef39968e6a4f1b1206c1c876f9bd50cf739ccbcd69f8539bbac5dcc7a"
+dependencies = [
+ "openvino-finder",
+ "openvino-sys",
+ "thiserror",
+]
+
+[[package]]
+name = "openvino-finder"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05d234d1394a413ea8adaf0c40806b9ad1946be6310b441f688840654a331973"
+dependencies = [
+ "cfg-if",
+ "log",
+]
+
+[[package]]
+name = "openvino-sys"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44c98acf37fc84ad9d7da4dc6c18f0f60ad209b43a6f555be01f9003d0a2a43d"
+dependencies = [
+ "env_logger",
+ "libloading",
+ "once_cell",
+ "openvino-finder",
+]
+
+[[package]]
 name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7491,6 +7524,7 @@ dependencies = [
  "futures",
  "http 1.1.0",
  "io-extras",
+ "openvino",
  "rustix 0.37.27",
  "spin-componentize",
  "spin-telemetry",
