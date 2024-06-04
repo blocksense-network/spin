@@ -23,7 +23,9 @@ mod ml {
         path: "wit/ml.wit"
     });
 }
-
+use crate::ml::test::test::graph::ExecutionTarget;
+use crate::ml::test::test::graph::GraphEncoding;
+use std::path::Path;
 
 use crate::hello::test::test::gggg2::say_hello;
 
@@ -74,6 +76,38 @@ fn main() -> Result {
             println!("{output}");
         }
         "imagenet" => {
+            let path_as_string = args.next().expect("path");
+            let path = Path::new(&path_as_string);
+            let model: Vec<u8> = std::fs::read(&path.join("model.xml"))?;
+            println!("Loaded model from xml len = {}", model.len());
+            let weights = std::fs::read(&path.join("model.bin"))?;
+            println!("Loaded weigths with len = {}", weights.len());
+            let imagenet_graph = ml::test::test::graph::load(&[model, weights], GraphEncoding::Openvino, ExecutionTarget::Cpu).unwrap();
+            println!("Loaded graph into wasi-nn with ID: {:?}", imagenet_graph);
+            let context = ml::test::test::graph::Graph::init_execution_context(&imagenet_graph).unwrap();
+            println!("Created context with ID: {:?}", context);
+
+            let image_data = std::fs::read("images/0.jpg").unwrap();
+            
+            let tensor_data = image_data; // !! TODO !!convert image to tensor
+
+            
+            let tensor_dimensions:Vec<u32> = vec![1, 3, 224, 224];
+            let tensor_type = ml::test::test::tensor::TensorType::Fp32;
+            let tensor_id = ml::test::test::tensor::Tensor::new(&tensor_dimensions, tensor_type, &tensor_data);
+            println!("Created tensor with ID: {:?}", tensor_id);
+
+            let set_input_result = ml::test::test::inference::GraphExecutionContext::set_input(&context, "0.jpg", tensor_id).unwrap();
+            println!("Input set with ID: {:?}", set_input_result);
+
+            let infered_result = ml::test::test::inference::GraphExecutionContext::compute(&context).unwrap();
+            println!("Executed graph inference");
+            let output_result_id = ml::test::test::inference::GraphExecutionContext::get_output(&context, "0.jpg").unwrap();
+
+            let output_result = ml::test::test::tensor::Tensor::data(&output_result_id);
+            println!("output = {:?}", &output_result);
+
+
             println!("Kuku!");
         }
         "sleep" => {

@@ -5,9 +5,10 @@ use std::{
 };
 
 mod hello_component;
-mod ml;
+mod ml_component;
 
 use crate::hello_component::hello::{HelloHostComponent, HelloHostImpl};
+use crate::ml_component::ml::{MLHostComponent, MLHostImpl};
 
 use anyhow::Context;
 use spin_core::{
@@ -187,6 +188,30 @@ async fn test_host_component_nn() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_host_component_imagenet() {
+    let engine = test_engine();
+    let handle = engine
+        .find_host_component_handle::<MLHostComponent>()
+        .unwrap();
+    let imagenet_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/test-programs/imagenet");
+    println!("imagenet_path = {imagenet_path:?}");
+    
+    let stdout = run_core_wasi_test_engine(
+        &engine,
+        ["imagenet", "/"],
+        |store_builder| {
+            store_builder.read_only_preopened_dir(&imagenet_path, "/".into()).unwrap();
+            store_builder.host_components_data().set(handle, MLHostImpl {});
+        },
+        |_| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(stdout, "Hello bace GGyci!");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 #[cfg(not(tarpaulin))]
 async fn test_panic() {
     let err = run_core_wasi_test(["panic"], |_| {}).await.unwrap_err();
@@ -206,6 +231,8 @@ fn test_engine() -> Engine<()> {
     let mut builder = Engine::builder(&test_config()).unwrap();
     builder.add_host_component(MultiplierHostComponent).unwrap();
     builder.add_host_component(HelloHostComponent).unwrap();
+    builder.add_host_component(MLHostComponent).unwrap();
+
     builder
         .link_import(|l, _| wasmtime_wasi::add_to_linker_async(l))
         .unwrap();

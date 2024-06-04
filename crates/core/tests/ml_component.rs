@@ -10,14 +10,14 @@ pub mod ml {
     use test::test::tensor;
 
     use test::test::errors::ErrorCode;
-    use test::test::graph::{Error, ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
+    use test::test::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
     use test::test::inference::GraphExecutionContext;
     use wasmtime::component::Resource;
 
     #[derive(Clone)]
-    pub struct NNHostComponent;
+    pub struct MLHostComponent;
 
-    impl HostComponent for NNHostComponent {
+    impl HostComponent for MLHostComponent {
         type Data = MLHostImpl;
 
         fn add_to_linker<T: Send>(
@@ -138,6 +138,7 @@ pub mod ml {
             _graph_encoding: GraphEncoding,
             _target: ExecutionTarget,
         ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
+            println!("[graph::Host] load");
             Err(anyhow!("Not implemented"))
         }
         fn load_by_name(
