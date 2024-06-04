@@ -1,30 +1,18 @@
-/*use crate::ml::Ml::test::test::graph::Host as GraphHost;
-use crate::ml::Ml::test::test::graph::GraphBuilder;
-use crate::ml::Ml::test::test::graph::GraphEncoding;
-use crate::ml::Ml::test::test::graph::ExecutionTarget;
-use crate::ml::Ml::test::test::graph::Graph;// as GraphGraph;
-
-use crate::ml::Ml::test::test::errors::Error;
-
-
 pub mod Ml {
     wasmtime::component::bindgen!("ml" in "tests/core-wasi-test/wit");
 
     use spin_core::HostComponent;
 
-    //use crate::nn_prototype::nn_prototype::test::test::errors::Host as ErrorHost;
-    //use crate::nn_prototype::nn_prototype::test::test::graph::Host as GraphHost;
-    //use crate::nn_prototype::nn_prototype::test::test::errors::ErrorCode as ErrorCode;
+    use anyhow::anyhow;
+    use test::test::errors;
+    use test::test::graph;
+    use test::test::inference;
+    use test::test::tensor;
 
-
-    
-    use crate::ml::GraphHost;
-    use crate::ml::GraphBuilder;
-    use crate::ml::GraphEncoding;
-    use crate::ml::ExecutionTarget;
-    use crate::ml::Graph;
-    use crate::ml::Error;
-    
+    use test::test::errors::ErrorCode;
+    use test::test::graph::{Error, ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
+    use test::test::inference::GraphExecutionContext;
+    use wasmtime::component::Resource;
 
     #[derive(Clone)]
     pub struct NNHostComponent;
@@ -46,25 +34,120 @@ pub mod Ml {
 
     pub struct MLHostImpl {}
 
-    impl GraphHost for MLHostImpl {
-        fn load(builder: &GraphBuilder, 
-            encoding: &GraphEncoding, 
-            target: &ExecutionTarget) -> wasmtime::Result<Graph, Error> {
-            
+    impl graph::HostGraph for MLHostImpl {
+        fn init_execution_context(
+            &mut self,
+            graph: Resource<Graph>,
+        ) -> Result<
+            Result<Resource<inference::GraphExecutionContext>, Resource<errors::Error>>,
+            anyhow::Error,
+        > {
+            Err(anyhow!("Not implemented"))
         }
-        //load: func(builder: list<graph-builder>, encoding: graph-encoding, target: execution-target) -> result<graph, error>;
+        fn drop(&mut self, graph: Resource<Graph>) -> Result<(), anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
     }
 
-    //impl Ml::error::ErrorHost for MLHostImpl {
-
-    //}
-    /*impl ErrorHost for MLHostImpl {
-        fn code(&mut self) -> wasmtime::Result<ErrorCode> {
-            Ok(self.code)
+    impl errors::HostError for MLHostImpl {
+        fn new(
+            &mut self,
+            code: errors::ErrorCode,
+            data: String,
+        ) -> Result<Resource<errors::Error>, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
         }
-        /*fn say_hello(&mut self, x: String) -> wasmtime::Result<String> {
-            Ok(format!("Hello bace {x}!"))
-        }*/
+
+        fn drop(&mut self, err: Resource<errors::Error>) -> Result<(), anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+
+        fn code(&mut self, err: Resource<errors::Error>) -> Result<ErrorCode, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+
+        fn data(&mut self, err: Resource<errors::Error>) -> Result<String, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
     }
-    */
-}*/
+    impl tensor::HostTensor for MLHostImpl {
+        fn new(
+            &mut self,
+            tensor_dimentions: Vec<u32>,
+            tensor_type: tensor::TensorType,
+            tensor_data: Vec<u8>,
+        ) -> Result<Resource<tensor::Tensor>, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+        fn dimensions(
+            &mut self,
+            tensor: Resource<tensor::Tensor>,
+        ) -> Result<Vec<u32>, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+        fn ty(
+            &mut self,
+            tensor: Resource<tensor::Tensor>,
+        ) -> Result<tensor::TensorType, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+        fn data(&mut self, tensor: Resource<tensor::Tensor>) -> Result<Vec<u8>, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+        fn drop(&mut self, tensor: Resource<tensor::Tensor>) -> Result<(), anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+    }
+
+    impl inference::HostGraphExecutionContext for MLHostImpl {
+        fn set_input(
+            &mut self,
+            graph_execution_context: Resource<GraphExecutionContext>,
+            name: String,
+            val2: Resource<tensor::Tensor>,
+        ) -> Result<Result<(), Resource<errors::Error>>, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+        fn compute(
+            &mut self,
+            graph_execution_context: Resource<GraphExecutionContext>,
+        ) -> Result<Result<(), Resource<errors::Error>>, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+        fn get_output(
+            &mut self,
+            graph_execution_context: Resource<GraphExecutionContext>,
+            name: String,
+        ) -> Result<Result<Resource<tensor::Tensor>, Resource<errors::Error>>, anyhow::Error>
+        {
+            Err(anyhow!("Not implemented"))
+        }
+        fn drop(
+            &mut self,
+            graph_execution_context: Resource<GraphExecutionContext>,
+        ) -> Result<(), anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+    }
+
+    impl errors::Host for MLHostImpl {}
+    impl graph::Host for MLHostImpl {
+        fn load(
+            &mut self,
+            graph: Vec<Vec<u8>>,
+            graph_encoding: GraphEncoding,
+            target: ExecutionTarget,
+        ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+        fn load_by_name(
+            &mut self,
+            graph: String,
+        ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
+            Err(anyhow!("Not implemented"))
+        }
+    }
+
+    impl inference::Host for MLHostImpl {}
+    impl tensor::Host for MLHostImpl {}
+}

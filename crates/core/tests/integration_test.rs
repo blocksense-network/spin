@@ -4,9 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-
 mod hello_component;
-//mod ml;
+mod ml;
 
 use crate::hello_component::hello::{HelloHostComponent, HelloHostImpl};
 
