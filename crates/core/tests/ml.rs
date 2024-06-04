@@ -1,4 +1,4 @@
-pub mod Ml {
+pub mod ml {
     wasmtime::component::bindgen!("ml" in "tests/core-wasi-test/wit");
 
     use spin_core::HostComponent;
@@ -37,14 +37,14 @@ pub mod Ml {
     impl graph::HostGraph for MLHostImpl {
         fn init_execution_context(
             &mut self,
-            graph: Resource<Graph>,
+            _graph: Resource<Graph>,
         ) -> Result<
             Result<Resource<inference::GraphExecutionContext>, Resource<errors::Error>>,
             anyhow::Error,
         > {
             Err(anyhow!("Not implemented"))
         }
-        fn drop(&mut self, graph: Resource<Graph>) -> Result<(), anyhow::Error> {
+        fn drop(&mut self, _graph: Resource<Graph>) -> Result<(), anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
     }
@@ -52,49 +52,49 @@ pub mod Ml {
     impl errors::HostError for MLHostImpl {
         fn new(
             &mut self,
-            code: errors::ErrorCode,
-            data: String,
+            _code: errors::ErrorCode,
+            _data: String,
         ) -> Result<Resource<errors::Error>, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
 
-        fn drop(&mut self, err: Resource<errors::Error>) -> Result<(), anyhow::Error> {
+        fn drop(&mut self, _error: Resource<errors::Error>) -> Result<(), anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
 
-        fn code(&mut self, err: Resource<errors::Error>) -> Result<ErrorCode, anyhow::Error> {
+        fn code(&mut self, _error: Resource<errors::Error>) -> Result<ErrorCode, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
 
-        fn data(&mut self, err: Resource<errors::Error>) -> Result<String, anyhow::Error> {
+        fn data(&mut self, _error: Resource<errors::Error>) -> Result<String, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
     }
     impl tensor::HostTensor for MLHostImpl {
         fn new(
             &mut self,
-            tensor_dimentions: Vec<u32>,
-            tensor_type: tensor::TensorType,
-            tensor_data: Vec<u8>,
+            _tensor_dimentions: tensor::TensorDimensions,
+            _tensor_type: tensor::TensorType,
+            _tensor_data: tensor::TensorData,
         ) -> Result<Resource<tensor::Tensor>, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
         fn dimensions(
             &mut self,
-            tensor: Resource<tensor::Tensor>,
+            _tensor: Resource<tensor::Tensor>,
         ) -> Result<Vec<u32>, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
         fn ty(
             &mut self,
-            tensor: Resource<tensor::Tensor>,
+            _tensor: Resource<tensor::Tensor>,
         ) -> Result<tensor::TensorType, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
-        fn data(&mut self, tensor: Resource<tensor::Tensor>) -> Result<Vec<u8>, anyhow::Error> {
+        fn data(&mut self, _tensor: Resource<tensor::Tensor>) -> Result<tensor::TensorData, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
-        fn drop(&mut self, tensor: Resource<tensor::Tensor>) -> Result<(), anyhow::Error> {
+        fn drop(&mut self, _tensor: Resource<tensor::Tensor>) -> Result<(), anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
     }
@@ -102,29 +102,29 @@ pub mod Ml {
     impl inference::HostGraphExecutionContext for MLHostImpl {
         fn set_input(
             &mut self,
-            graph_execution_context: Resource<GraphExecutionContext>,
-            name: String,
-            val2: Resource<tensor::Tensor>,
+            _graph_execution_context: Resource<GraphExecutionContext>,
+            _input_name: String,
+            _tensor: Resource<tensor::Tensor>,
         ) -> Result<Result<(), Resource<errors::Error>>, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
         fn compute(
             &mut self,
-            graph_execution_context: Resource<GraphExecutionContext>,
+            _graph_execution_context: Resource<GraphExecutionContext>,
         ) -> Result<Result<(), Resource<errors::Error>>, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
         fn get_output(
             &mut self,
-            graph_execution_context: Resource<GraphExecutionContext>,
-            name: String,
+            _graph_execution_context: Resource<GraphExecutionContext>,
+            _input_name: String,
         ) -> Result<Result<Resource<tensor::Tensor>, Resource<errors::Error>>, anyhow::Error>
         {
             Err(anyhow!("Not implemented"))
         }
         fn drop(
             &mut self,
-            graph_execution_context: Resource<GraphExecutionContext>,
+            _graph_execution_context: Resource<GraphExecutionContext>,
         ) -> Result<(), anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
@@ -134,15 +134,15 @@ pub mod Ml {
     impl graph::Host for MLHostImpl {
         fn load(
             &mut self,
-            graph: Vec<Vec<u8>>,
-            graph_encoding: GraphEncoding,
-            target: ExecutionTarget,
+            _graph: Vec<GraphBuilder>,
+            _graph_encoding: GraphEncoding,
+            _target: ExecutionTarget,
         ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
         fn load_by_name(
             &mut self,
-            graph: String,
+            _graph: String,
         ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
             Err(anyhow!("Not implemented"))
         }
