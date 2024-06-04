@@ -17,6 +17,14 @@ mod hello {
     });
 }
 
+mod ml {
+    wit_bindgen::generate!({
+        world: "ml",
+        path: "wit/ml.wit"
+    });
+}
+
+
 use crate::hello::test::test::gggg2::say_hello;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
@@ -64,6 +72,9 @@ fn main() -> Result {
             let input: String = args.next().expect("input").parse().expect("String");
             let output = say_hello(&input);
             println!("{output}");
+        }
+        "imagenet" => {
+            println!("Kuku!");
         }
         "sleep" => {
             let duration =

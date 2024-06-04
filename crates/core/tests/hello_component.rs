@@ -2,10 +2,7 @@ pub mod hello {
     wasmtime::component::bindgen!("hello" in "tests/core-wasi-test/wit");
 
     use spin_core::HostComponent;
-    //use anyhow::anyhow;
     use test::test::gggg2;
-    //use test::test::errors;
-    //use test::test::errors::{ErrorCode};
 
     #[derive(Clone)]
     pub struct HelloHostComponent;
