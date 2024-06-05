@@ -29,6 +29,9 @@ use std::path::Path;
 
 use crate::hello::test::test::gggg2::say_hello;
 
+use image2tensor;
+use image2tensor::convert_image_to_tensor_bytes;
+
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
 fn main() -> Result {
@@ -86,13 +89,20 @@ fn main() -> Result {
             println!("Loaded graph into wasi-nn with ID: {:?}", imagenet_graph);
             let context = ml::test::test::graph::Graph::init_execution_context(&imagenet_graph).unwrap();
             println!("Created context with ID: {:?}", context);
-
-            let image_data = std::fs::read("images/0.jpg").unwrap();
-            
-            let tensor_data = image_data; // !! TODO !!convert image to tensor
-
-            
             let tensor_dimensions:Vec<u32> = vec![1, 3, 224, 224];
+            let tensor_data = convert_image_to_tensor_bytes(
+                "images/0.jpg",
+                tensor_dimensions[2],
+                tensor_dimensions[3],
+                image2tensor::TensorType::F32,
+                image2tensor::ColorOrder::BGR,
+            )
+            .or_else(|e| Err(e))
+            .unwrap();
+            
+
+            
+            
             let tensor_type = ml::test::test::tensor::TensorType::Fp32;
             let tensor_id = ml::test::test::tensor::Tensor::new(&tensor_dimensions, tensor_type, &tensor_data);
             println!("Created tensor with ID: {:?}", tensor_id);

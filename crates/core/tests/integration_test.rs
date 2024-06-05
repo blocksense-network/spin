@@ -17,6 +17,7 @@ use spin_core::{
 use tempfile::TempDir;
 use tokio::{fs, io::AsyncWrite};
 
+
 #[tokio::test(flavor = "multi_thread")]
 async fn test_stdio() {
     let stdout = run_core_wasi_test(["echo"], |store_builder| {
@@ -196,13 +197,13 @@ async fn test_host_component_imagenet() {
     let imagenet_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/test-programs/imagenet");
     println!("imagenet_path = {imagenet_path:?}");
-    
+
     let stdout = run_core_wasi_test_engine(
         &engine,
         ["imagenet", "/"],
         |store_builder| {
             store_builder.read_only_preopened_dir(&imagenet_path, "/".into()).unwrap();
-            store_builder.host_components_data().set(handle, MLHostImpl {});
+            //probably no needed! store_builder.host_components_data().set(handle, MLHostImpl {..Default::default()});
         },
         |_| {},
     )
