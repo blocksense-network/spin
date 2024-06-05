@@ -7529,6 +7529,7 @@ dependencies = [
  "spin-componentize",
  "spin-telemetry",
  "system-interface",
+ "table",
  "tempfile",
  "tokio",
  "tracing",
