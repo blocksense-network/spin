@@ -191,7 +191,7 @@ async fn test_host_component_nn() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_host_component_imagenet() {
     let engine = test_engine();
-    let handle = engine
+    let _handle = engine
         .find_host_component_handle::<MLHostComponent>()
         .unwrap();
     let imagenet_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

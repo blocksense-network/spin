@@ -107,12 +107,12 @@ fn main() -> Result {
             let tensor_id = ml::test::test::tensor::Tensor::new(&tensor_dimensions, tensor_type, &tensor_data);
             println!("Created tensor with ID: {:?}", tensor_id);
 
-            let set_input_result = ml::test::test::inference::GraphExecutionContext::set_input(&context, "0.jpg", tensor_id).unwrap();
+            let set_input_result = ml::test::test::inference::GraphExecutionContext::set_input(&context, "0", tensor_id).unwrap();
             println!("Input set with ID: {:?}", set_input_result);
 
             let infered_result = ml::test::test::inference::GraphExecutionContext::compute(&context).unwrap();
             println!("Executed graph inference");
-            let output_result_id = ml::test::test::inference::GraphExecutionContext::get_output(&context, "0.jpg").unwrap();
+            let output_result_id = ml::test::test::inference::GraphExecutionContext::get_output(&context, "0").unwrap();
 
             let output_result = ml::test::test::tensor::Tensor::data(&output_result_id);
             println!("output = {:?}", &output_result);
