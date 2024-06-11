@@ -2,7 +2,7 @@
 pub mod ml {
     wasmtime::component::bindgen!("ml" in "tests/core-wasi-test/wit");
 
-    use anyhow::Ok;
+    
     use spin_core::HostComponent;
 
     use anyhow::{anyhow, Context};
@@ -18,7 +18,7 @@ pub mod ml {
     use tokio::sync::Mutex;
     
     use table;
-    use openvino::{Core, InferenceError, Layout, Precision, SetupError, TensorDesc, InferRequest};
+    use openvino::{Layout, Precision, TensorDesc};
 
     #[derive(Clone)]
     pub struct MLHostComponent;
@@ -108,7 +108,7 @@ pub mod ml {
                     };
     
                     let mut exec_network = self.openvino.as_mut().expect("").load_network(&cnn_network, map_execution_target_to_string(graph.target))?;
-                    let infer_request = exec_network.create_infer_request().unwrap();
+                    let infer_request = exec_network.create_infer_request().expect("Can't create InferRequest");
                     let graph_execution_context = GraphExecutionContextInternalData {
                         cnn_network: cnn_network, 
                         executable_network: Mutex::new(exec_network),
@@ -116,44 +116,28 @@ pub mod ml {
                     };
 
                     match self.execution_contexts.push(graph_execution_context).map(Resource::<inference::GraphExecutionContext>::new_own) {
-                        std::result::Result::Ok(res) => {
-                            return std::result::Result::Ok(std::result::Result::Ok(res));
+                        Ok(res) => {
+                            return Ok(Ok(res));
                         }
                         Err(_) => {
                             match self.errors.push(ErrorInternalData { code: ErrorCode::RuntimeError, message: "Can't create graph execution context".to_string()}){
-                                std::result::Result::Ok(id) => {
-                                    return std::result::Result::Ok(Err(Resource::<errors::Error>::new_own(id)));
+                                Ok(id) => {
+                                    return Ok(Err(Resource::<errors::Error>::new_own(id)));
                                 }
                                 Err(_) => {
                                     return Err(anyhow!("Can't allocate error"));
                                 }
                             }
-                                //.map(Resource::<errors::Error>::new_own)
-                                //  .map_err(|_|anyhow!("Can't allocate error")));
-
-                            //return std::result::Result::Ok(Err(err));
                         }
                     }
-                    /*
-                    if let std::result::Result::Ok(graph_execution_context_id) = 
-                        self.execution_contexts.push(graph_execution_context)
-                            .map(Resource::<inference::GraphExecutionContext>::new_own)
-    
-                        {
-                        println!("graph_execution_context_id  = {:?}", graph_execution_context_id);
-                        return std::result::Result::Ok(std::result::Result::Ok(graph_execution_context_id))
-                    };
-                    */
                 
                 }
             }
             Err(anyhow!("[graph::HostGraph] fn init_execution_context -> Not implemented"))
         }
         fn drop(&mut self, graph: Resource<Graph>) -> Result<(), anyhow::Error> {
-            let v = self.graphs.remove(graph.rep());
-            //println!("v = {v:?}");
-            v.ok_or(anyhow!(format!("Can't find graph with ID = {}", graph.rep()))).map(|_| ())
-
+            let _v = self.graphs.remove(graph.rep());
+            Ok(())
         }
     }
 
@@ -235,12 +219,12 @@ pub mod ml {
             
             let input_name = execution_context.cnn_network.get_input_name(index).context(format!("Can't find input with name = {}", index))?;
             match execution_context.infer_request.set_blob(&input_name, &blob) {
-                std::result::Result::Ok(res) => {
-                    return std::result::Result::Ok(std::result::Result::Ok(res));
+                Ok(res) => {
+                    return Ok(Ok(res));
                 }
                 std::result::Result::Err(err) => {
                     match self.errors.push(ErrorInternalData { code: ErrorCode::RuntimeError, message: format!("{:?}", err) }) {
-                        std::result::Result::Ok(error_rep) => {
+                        Ok(error_rep) => {
                             return Ok(Err(Resource::<errors::Error>::new_own(error_rep)));
                         }
                         Err(err) => {
@@ -259,10 +243,10 @@ pub mod ml {
                 .get_mut(graph_execution_context.rep())
                 .ok_or(anyhow!(format!("Can't find graph execution context with ID = {}", graph_execution_context.rep())))?;
             match graph_execution.infer_request.infer() {
-                std::result::Result::Ok(..) => { return std::result::Result::Ok(std::result::Result::Ok(())); }
+                Ok(..) => { return Ok(Ok(())); }
                 Err(err) => {
                     match self.errors.push(ErrorInternalData { code: ErrorCode::RuntimeError, message: format!("{:?}", err) }) {
-                        std::result::Result::Ok(error_rep) => {
+                        Ok(error_rep) => {
                             return Ok(Err(Resource::<errors::Error>::new_own(error_rep)));
                         }
                         Err(err) => {
@@ -285,10 +269,8 @@ pub mod ml {
                 .ok_or(anyhow!(format!("Can't find graph execution context with ID = {}", graph_execution_context.rep())))?;
             let output_name = graph_execution.cnn_network.get_output_name(index).context("Can't find output name for ID = {index}")?;
             let blob = graph_execution.infer_request.get_blob(&output_name).context("Can't get blob for output name = {output_name}")?;
-            //let blob_size = blob.byte_len()?;
             let tensor_desc = blob.tensor_desc().context("Can't get blob description")?;
             let buffer = blob.buffer()
-            //let buffer = blob.buffer_as_type::<u8>()
             .context("Can't get blob buffer")?.iter()
             .map(|&d| d as u8)
             .collect::<Vec<_>>();
@@ -302,12 +284,12 @@ pub mod ml {
                 tensor_data: buffer,
             };
             match self.tensors.push(tensor).map(Resource::<tensor::Tensor>::new_own) {
-                std::result::Result::Ok(t) => {
-                    return std::result::Result::Ok(std::result::Result::Ok(t));
+                Ok(t) => {
+                    return Ok(Ok(t));
                 }
                 Err(err) => {
                     match self.errors.push(ErrorInternalData { code: ErrorCode::RuntimeError, message: format!("{:?}", err) }) {
-                        std::result::Result::Ok(error_rep) => {
+                        Ok(error_rep) => {
                             return Ok(Err(Resource::<errors::Error>::new_own(error_rep)));
                         }
                         Err(err) => {
@@ -347,12 +329,12 @@ pub mod ml {
             // Read the guest array.
             let graph_internal_data = GraphInternalData { xml: graph[0].clone(), weights: graph[1].clone(), target: target };
             match self.graphs.push(graph_internal_data) {
-                std::result::Result::Ok(graph_rep) => {
-                    return std::result::Result::Ok(std::result::Result::Ok(Resource::<Graph>::new_own(graph_rep)));
+                Ok(graph_rep) => {
+                    return Ok(Ok(Resource::<Graph>::new_own(graph_rep)));
                 },
                 Err(err) => {
                     match self.errors.push(ErrorInternalData { code: ErrorCode::RuntimeError, message: format!("{:?}", err) }) {
-                        std::result::Result::Ok(error_rep) => {
+                        Ok(error_rep) => {
                             return Ok(Err(Resource::<errors::Error>::new_own(error_rep)));
                         }
                         Err(err) => {
@@ -361,14 +343,6 @@ pub mod ml {
                     }
                 }
             }
-            /*/
-            if let std::result::Result::Ok(graph_id) = self.graphs.push(graph_internal_data).map(Resource::<Graph>::new_own){
-                println!("{:?}", graph_id);
-                return std::result::Result::Ok(std::result::Result::Ok(graph_id))
-            };//.ok_or(sqlite::Error::InvalidConnection);
-            
-            Err(anyhow!("[graph::Host] fn load -> Not implemented"))
-            */
         }
         fn load_by_name(
             &mut self,
