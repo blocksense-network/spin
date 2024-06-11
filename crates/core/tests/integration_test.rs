@@ -8,7 +8,7 @@ mod hello_component;
 mod ml_component;
 
 use crate::hello_component::hello::{HelloHostComponent, HelloHostImpl};
-use crate::ml_component::ml::{MLHostComponent, MLHostImpl};
+use crate::ml_component::ml::{MLHostComponent};
 
 use anyhow::Context;
 use spin_core::{
@@ -203,13 +203,12 @@ async fn test_host_component_imagenet() {
         ["imagenet", "/"],
         |store_builder| {
             store_builder.read_only_preopened_dir(&imagenet_path, "/".into()).unwrap();
-            //probably no needed! store_builder.host_components_data().set(handle, MLHostImpl {..Default::default()});
         },
         |_| {},
     )
     .await
     .unwrap();
-    assert_eq!(stdout, "Hello bace GGyci!");
+    assert_eq!(stdout, "0.47 -> Eskimo dog, husky\n0.37 -> Siberian husky\n0.01 -> malamute, malemute, Alaskan malamute");
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -23,8 +23,13 @@ mod ml {
         path: "wit/ml.wit"
     });
 }
+mod imagenet_classes;
+use crate::imagenet_classes::{InferenceResult, sort_results};
+
+
 use crate::ml::test::test::graph::ExecutionTarget;
 use crate::ml::test::test::graph::GraphEncoding;
+use crate::ml::test::test::tensor::TensorType;
 use std::path::Path;
 
 use crate::hello::test::test::gggg2::say_hello;
@@ -82,13 +87,13 @@ fn main() -> Result {
             let path_as_string = args.next().expect("path");
             let path = Path::new(&path_as_string);
             let model: Vec<u8> = std::fs::read(&path.join("model.xml"))?;
-            println!("Loaded model from xml len = {}", model.len());
+            eprintln!("Loaded model from xml len = {}", model.len());
             let weights = std::fs::read(&path.join("model.bin"))?;
-            println!("Loaded weigths with len = {}", weights.len());
+            eprintln!("Loaded weigths with len = {}", weights.len());
             let imagenet_graph = ml::test::test::graph::load(&[model, weights], GraphEncoding::Openvino, ExecutionTarget::Cpu).unwrap();
-            println!("Loaded graph into wasi-nn with ID: {:?}", imagenet_graph);
+            eprintln!("Loaded graph into wasi-nn with ID: {:?}", imagenet_graph);
             let context = ml::test::test::graph::Graph::init_execution_context(&imagenet_graph).unwrap();
-            println!("Created context with ID: {:?}", context);
+            eprintln!("Created context with ID: {:?}", context);
             let tensor_dimensions:Vec<u32> = vec![1, 3, 224, 224];
             let tensor_data = convert_image_to_tensor_bytes(
                 "images/0.jpg",
@@ -105,20 +110,31 @@ fn main() -> Result {
             
             let tensor_type = ml::test::test::tensor::TensorType::Fp32;
             let tensor_id = ml::test::test::tensor::Tensor::new(&tensor_dimensions, tensor_type, &tensor_data);
-            println!("Created tensor with ID: {:?}", tensor_id);
+            eprintln!("Created tensor with ID: {:?}", tensor_id);
 
             let set_input_result = ml::test::test::inference::GraphExecutionContext::set_input(&context, "0", tensor_id).unwrap();
-            println!("Input set with ID: {:?}", set_input_result);
+            eprintln!("Input set with ID: {:?}", set_input_result);
 
             let infered_result = ml::test::test::inference::GraphExecutionContext::compute(&context).unwrap();
-            println!("Executed graph inference");
+            eprintln!("Executed graph inference");
             let output_result_id = ml::test::test::inference::GraphExecutionContext::get_output(&context, "0").unwrap();
 
-            let output_result = ml::test::test::tensor::Tensor::data(&output_result_id);
-            println!("output = {:?}", &output_result);
-
-
-            println!("Kuku!");
+            let output_data = ml::test::test::tensor::Tensor::data(&output_result_id);
+            let output_dimensions = ml::test::test::tensor::Tensor::dimensions(&output_result_id);
+            let output_type = ml::test::test::tensor::Tensor::ty(&output_result_id);
+            if output_dimensions.len() == 2 && output_dimensions[0] == 1 && output_dimensions[1] == 1001 && output_type == TensorType::Fp32 {
+                let output_vec_f32 = unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const f32,  1001) };
+                let results = sort_results(&output_vec_f32);
+                for i in 0..3 {
+                    println!(
+                        "{:.2} -> {}",
+                        results[i].weight,
+                        imagenet_classes::IMAGENET_CLASSES[results[i].index],
+                    );
+                }
+            } else {
+                eprintln!("Output not as expected, output = {:?} {:?}", &output_dimensions, &output_type);
+            }
         }
         "sleep" => {
             let duration =
