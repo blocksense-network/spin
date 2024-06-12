@@ -1021,23 +1021,3 @@ pub const IMAGENET_CLASSES: [&str; 1000] = [
 ];
 
 
-// Sort the buffer of probabilities. The graph places the match probability for each class at the
-// index for that class (e.g. the probability of class 42 is placed at buffer[42]). Here we convert
-// to a wrapping InferenceResult and sort the results.
-pub fn sort_results(buffer: &[f32]) -> Vec<InferenceResult> {
-    let mut results: Vec<InferenceResult> = buffer
-        .iter()
-        .skip(1)
-        .enumerate()
-        .map(|(c, p)| InferenceResult{ index: c, weight: *p})
-        .collect();
-    results.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap());
-    results
-}
-
-// A wrapper for class ID and match probabilities.
-#[derive(Debug, PartialEq)]
-pub struct InferenceResult{
-    pub index: usize,
-    pub weight: f32,
-}
