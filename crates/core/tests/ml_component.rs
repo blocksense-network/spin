@@ -7,6 +7,7 @@ pub mod ml {
 
     use anyhow::{anyhow, Context};
     use test::test::errors;
+    use test::test::errors::HostError;
     use test::test::graph;
     use test::test::inference;
     use test::test::tensor;
@@ -66,7 +67,7 @@ pub mod ml {
     pub struct MLHostImpl {
         pub openvino: Option<openvino::Core>,
         pub graphs: table::Table<GraphInternalData>,
-        pub execution_contexts: table::Table<GraphExecutionContextInternalData>,
+        pub executions: table::Table<GraphExecutionContextInternalData>,
         pub tensors: table::Table<TensorInternalData>,
         pub errors: table::Table<ErrorInternalData>,
 
@@ -115,7 +116,7 @@ pub mod ml {
                         infer_request: infer_request,
                     };
 
-                    match self.execution_contexts.push(graph_execution_context).map(Resource::<inference::GraphExecutionContext>::new_own) {
+                    match self.executions.push(graph_execution_context).map(Resource::<inference::GraphExecutionContext>::new_own) {
                         Ok(res) => {
                             return Ok(Ok(res));
                         }
@@ -215,44 +216,30 @@ pub mod ml {
                 .collect::<Vec<_>>();
             let desc = TensorDesc::new(Layout::NHWC, &dimensions, precision);
             let blob = openvino::Blob::new(&desc, &tensor_resource.tensor_data)?;
-            let execution_context: &mut GraphExecutionContextInternalData = self.execution_contexts.get_mut(graph_execution_context.rep()).context(format!("Can't find graph execution context with ID = {}", graph_execution_context.rep()))?;
-            
+            let execution_context: &mut GraphExecutionContextInternalData = self.executions.get_mut(graph_execution_context.rep()).context(format!("Can't find graph execution context with ID = {}", graph_execution_context.rep()))?;
             let input_name = execution_context.cnn_network.get_input_name(index).context(format!("Can't find input with name = {}", index))?;
-            match execution_context.infer_request.set_blob(&input_name, &blob) {
+            let res = match execution_context.infer_request.set_blob(&input_name, &blob) {
                 Ok(res) => {
-                    return Ok(Ok(res));
+                    Ok(res)
                 }
-                std::result::Result::Err(err) => {
-                    match self.errors.push(ErrorInternalData { code: ErrorCode::RuntimeError, message: format!("{:?}", err) }) {
-                        Ok(error_rep) => {
-                            return Ok(Err(Resource::<errors::Error>::new_own(error_rep)));
-                        }
-                        Err(err) => {
-                            return  Err(anyhow!("Can't create internal error for {:?}", err));
-                        }
-                    }
+                Err(err) => {
+                    Err(self.new(ErrorCode::RuntimeError,  format!("Inference error = {:?}", err.to_string()))?)
                 }
-            }
+            };
+            Ok(res)
         }
 
         fn compute(
             &mut self,
             graph_execution_context: Resource<GraphExecutionContext>,
         ) -> Result<Result<(), Resource<errors::Error>>, anyhow::Error> {
-            let graph_execution = self.execution_contexts
+            let graph_execution = self.executions
                 .get_mut(graph_execution_context.rep())
                 .ok_or(anyhow!(format!("Can't find graph execution context with ID = {}", graph_execution_context.rep())))?;
             match graph_execution.infer_request.infer() {
-                Ok(..) => { return Ok(Ok(())); }
+                Ok(..) => { Ok(Ok(())) }
                 Err(err) => {
-                    match self.errors.push(ErrorInternalData { code: ErrorCode::RuntimeError, message: format!("{:?}", err) }) {
-                        Ok(error_rep) => {
-                            return Ok(Err(Resource::<errors::Error>::new_own(error_rep)));
-                        }
-                        Err(err) => {
-                            return  Err(anyhow!("Can't create internal error for {:?}", err));
-                        }
-                    }
+                    Ok(Err(self.new(ErrorCode::RuntimeError, format!("Inference error = {:?}", err.to_string()))?))
                 }
             }
         }
@@ -264,7 +251,7 @@ pub mod ml {
         ) -> Result<Result<Resource<tensor::Tensor>, Resource<errors::Error>>, anyhow::Error>
         {
             let index = input_name.parse::<usize>().context("Can't parse {} to usize for input_name")?;
-            let graph_execution = self.execution_contexts
+            let graph_execution = self.executions
                 .get_mut(graph_execution_context.rep())
                 .ok_or(anyhow!(format!("Can't find graph execution context with ID = {}", graph_execution_context.rep())))?;
             let output_name = graph_execution.cnn_network.get_output_name(index).context("Can't find output name for ID = {index}")?;
@@ -283,21 +270,14 @@ pub mod ml {
                 tensor_type: map_precision_to_tensor_type(tensor_desc.precision()),
                 tensor_data: buffer,
             };
-            match self.tensors.push(tensor).map(Resource::<tensor::Tensor>::new_own) {
+            Ok(match self.tensors.push(tensor).map(Resource::<tensor::Tensor>::new_own) {
                 Ok(t) => {
-                    return Ok(Ok(t));
+                    Ok(t)
                 }
-                Err(err) => {
-                    match self.errors.push(ErrorInternalData { code: ErrorCode::RuntimeError, message: format!("{:?}", err) }) {
-                        Ok(error_rep) => {
-                            return Ok(Err(Resource::<errors::Error>::new_own(error_rep)));
-                        }
-                        Err(err) => {
-                            return  Err(anyhow!("Can't create internal error for {:?}", err));
-                        }
-                    }
+                Err(_) => {
+                    Err(self.new(ErrorCode::RuntimeError,  format!("Can't create tensor for get_output"))?)
                 }
-            }
+            })
         }
 
         fn drop(
