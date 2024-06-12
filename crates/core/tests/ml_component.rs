@@ -136,8 +136,9 @@ pub mod ml {
             }
             Err(anyhow!("[graph::HostGraph] fn init_execution_context -> Not implemented"))
         }
+
         fn drop(&mut self, graph: Resource<Graph>) -> Result<(), anyhow::Error> {
-            let _v = self.graphs.remove(graph.rep());
+            self.graphs.remove(graph.rep()).context(format!("Can't find graph with ID = {}", graph.rep()))?;
             Ok(())
         }
     }
@@ -194,7 +195,8 @@ pub mod ml {
             self.tensors.get(tensor.rep()).ok_or(anyhow!(format!("Can't find tensor with ID = {}", tensor.rep()))).map(|t| t.tensor_data.clone())
         }
         fn drop(&mut self, tensor: Resource<tensor::Tensor>) -> Result<(), anyhow::Error> {
-            self.tensors.remove(tensor.rep()).ok_or(anyhow!(format!("Can't find tensor with ID = {}", tensor.rep()))).map(|_| ())
+            self.tensors.remove(tensor.rep()).context(format!("Can't find tensor with ID = {}", tensor.rep()))?;
+            Ok(())
         }
     }
 
@@ -270,22 +272,19 @@ pub mod ml {
                 tensor_type: map_precision_to_tensor_type(tensor_desc.precision()),
                 tensor_data: buffer,
             };
-            Ok(match self.tensors.push(tensor).map(Resource::<tensor::Tensor>::new_own) {
+            match self.tensors.push(tensor).map(Resource::<tensor::Tensor>::new_own) {
                 Ok(t) => {
-                    Ok(t)
+                    return Ok(Ok(t));
                 }
                 Err(_) => {
-                    Err(self.new(ErrorCode::RuntimeError,  format!("Can't create tensor for get_output"))?)
+                    return Ok(Err(self.new(ErrorCode::RuntimeError,  format!("Can't create tensor for get_output"))?))
                 }
-            })
+            }
         }
 
-        fn drop(
-            &mut self,
-            graph_execution_context: Resource<GraphExecutionContext>,
-        ) -> Result<(), anyhow::Error> {
-            let id = graph_execution_context.rep();
-            self.graphs.remove(id).context("{Can't drow GraphExecutionContext with id = {id}")?;
+        fn drop(&mut self, execution: Resource<GraphExecutionContext>) -> Result<(), anyhow::Error> {
+            let id = execution.rep();
+            self.executions.remove(id).context("{Can't drow GraphExecutionContext with id = {id}")?;
             Ok(())
             
         }
