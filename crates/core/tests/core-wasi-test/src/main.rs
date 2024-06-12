@@ -86,7 +86,10 @@ fn main() -> Result {
         }
         "imagenet" => {
             let path_as_string = args.next().expect("path");
-            _ = imagenet_openvino_test(path_as_string);
+            let target_as_string = args.next().expect("target");
+            let image_file_as_string = args.next().expect("image_file");
+            _ = imagenet_openvino_test(path_as_string, target_as_string, image_file_as_string);
+
         }
         "sleep" => {
             let duration =
