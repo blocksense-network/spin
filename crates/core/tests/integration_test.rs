@@ -8,7 +8,7 @@ mod hello_component;
 mod ml_component;
 
 use crate::hello_component::hello::{HelloHostComponent, HelloHostImpl};
-use crate::ml_component::ml::{MLHostComponent};
+use crate::ml_component::ml::MLHostComponent;
 
 use anyhow::Context;
 use spin_core::{
@@ -16,7 +16,6 @@ use spin_core::{
 };
 use tempfile::TempDir;
 use tokio::{fs, io::AsyncWrite};
-
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_stdio() {
@@ -167,7 +166,7 @@ async fn test_host_component_data_update() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_host_component_nn() {
+async fn test_host_component_hello() {
     let engine = test_engine();
     let hello_handle = engine
         .find_host_component_handle::<HelloHostComponent>()
@@ -189,20 +188,22 @@ async fn test_host_component_nn() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_host_component_imagenet() {
+async fn test_host_component_imagenet_openvino_cpu() {
     let engine = test_engine();
     let _handle = engine
         .find_host_component_handle::<MLHostComponent>()
         .unwrap();
-    let imagenet_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/test-programs/imagenet");
+    let imagenet_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test-programs/imagenet");
     println!("imagenet_path = {imagenet_path:?}");
 
     let stdout = run_core_wasi_test_engine(
         &engine,
-        ["imagenet", "/"],
+        ["imagenet", "/", "CPU", "images/0.jpg"],
         |store_builder| {
-            store_builder.read_only_preopened_dir(&imagenet_path, "/".into()).unwrap();
+            store_builder
+                .read_only_preopened_dir(&imagenet_path, "/".into())
+                .unwrap();
         },
         |_| {},
     )
@@ -210,6 +211,32 @@ async fn test_host_component_imagenet() {
     .unwrap();
     assert_eq!(stdout, "0.47 -> Eskimo dog, husky\n0.37 -> Siberian husky\n0.01 -> malamute, malemute, Alaskan malamute");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_host_component_imagenet_openvino_gpu() {
+    let engine = test_engine();
+    let _handle = engine
+        .find_host_component_handle::<MLHostComponent>()
+        .unwrap();
+    let imagenet_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test-programs/imagenet");
+    println!("imagenet_path = {imagenet_path:?}");
+
+    let stdout = run_core_wasi_test_engine(
+        &engine,
+        ["imagenet", "/", "GPU", "images/1.jpg"],
+        |store_builder| {
+            store_builder
+                .read_only_preopened_dir(&imagenet_path, "/".into())
+                .unwrap();
+        },
+        |_| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(stdout, "0.96 -> mountain bike, all-terrain bike, off-roader\n0.01 -> bicycle-built-for-two, tandem bicycle, tandem\n0.00 -> alp");
+}
+
 
 #[tokio::test(flavor = "multi_thread")]
 #[cfg(not(tarpaulin))]
