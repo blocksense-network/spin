@@ -237,7 +237,6 @@ async fn test_host_component_imagenet_openvino_gpu() {
     assert_eq!(stdout, "0.96 -> mountain bike, all-terrain bike, off-roader\n0.01 -> bicycle-built-for-two, tandem bicycle, tandem\n0.00 -> alp");
 }
 
-
 #[tokio::test(flavor = "multi_thread")]
 #[cfg(not(tarpaulin))]
 async fn test_panic() {
