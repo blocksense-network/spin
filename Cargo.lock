@@ -7533,6 +7533,7 @@ dependencies = [
  "spin-loader",
  "spin-locked-app",
  "spin-manifest",
+ "spin-ml",
  "spin-oci",
  "spin-plugins",
  "spin-telemetry",
@@ -7864,6 +7865,20 @@ dependencies = [
  "ui-testing",
  "url",
  "wasm-pkg-common",
+]
+
+[[package]]
+name = "spin-ml"
+version = "2.7.0-pre0"
+dependencies = [
+ "anyhow",
+ "openvino",
+ "spin-app",
+ "spin-core",
+ "spin-world",
+ "table",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

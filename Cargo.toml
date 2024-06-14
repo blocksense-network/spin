@@ -69,6 +69,7 @@ spin-trigger = { path = "crates/trigger" }
 spin-trigger-http = { path = "crates/trigger-http" }
 spin-trigger-redis = { path = "crates/trigger-redis" }
 spin-variables = { path = "crates/variables" }
+spin-ml = { path = "crates/ml" }
 
 tempfile = "3.8.0"
 tokio = { version = "1.23", features = ["full"] }
@@ -121,10 +122,52 @@ llm-cublas = ["llm", "spin-trigger-http/llm-cublas"]
 
 [workspace]
 members = [
-  "crates/*",
+  "crates/app",
+  "crates/build",
+  "crates/common",
+  "crates/componentize",
+  "crates/core",
+  "crates/doctor",
+  "crates/expressions",
+  "crates/http",
+  "crates/key-value",
+  "crates/key-value-azure",
+  "crates/key-value-redis",
+  "crates/key-value-sqlite",
+  "crates/llm",
+  "crates/llm-local",
+  "crates/llm-remote-http",
+  "crates/loader",
+  "crates/locked-app",
+  "crates/manifest",
+  "crates/ml",
+  "crates/oci",
+  "crates/outbound-http",
+  "crates/outbound-mqtt",
+  "crates/outbound-mysql",
+  "crates/outbound-networking",
+  "crates/outbound-pg",
+  "crates/outbound-redis",
+  "crates/plugins",
+  "crates/serde",
+  "crates/sqlite",
+  "crates/sqlite-inproc",
+  "crates/sqlite-libsql",
+  "crates/table",
+  "crates/telemetry",
+  "crates/templates",
+  "crates/terminal",
+  "crates/test-codegen-macro",
+  "crates/testing",
+  "crates/trigger",
+  "crates/trigger-http",
+  "crates/trigger-redis",
+  "crates/ui-testing",
+  "crates/variables",
+  "crates/world",
+  "tests/testing-framework",
   "tests/conformance-tests",
   "tests/runtime-tests",
-  "tests/testing-framework",
 ]
 
 [workspace.dependencies]
