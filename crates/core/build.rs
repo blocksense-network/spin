@@ -4,10 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 extern crate curl;
 
-
 use std::io::Write;
 use curl::easy::Easy;
-use anyhow;
 
 fn main() {
     let base_url = "https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/";//images/0.jpg
