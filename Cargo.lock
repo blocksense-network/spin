@@ -1896,7 +1896,10 @@ dependencies = [
  "libz-sys",
  "openssl-sys",
  "pkg-config",
+<<<<<<< HEAD
  "rustls-ffi",
+=======
+>>>>>>> 163afe13 (Strange)
  "vcpkg",
  "windows-sys 0.52.0",
 ]
@@ -4120,6 +4123,7 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "linked-hash-map"
 version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4136,6 +4140,8 @@ dependencies = [
 ]
 
 [[package]]
+=======
+>>>>>>> 163afe13 (Strange)
 name = "linux-raw-sys"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8107,6 +8113,7 @@ dependencies = [
  "spin-llm-remote-http",
  "spin-loader",
  "spin-manifest",
+ "spin-ml",
  "spin-outbound-networking",
  "spin-sqlite",
  "spin-sqlite-inproc",
