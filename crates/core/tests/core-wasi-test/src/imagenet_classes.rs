@@ -1019,5 +1019,3 @@ pub const IMAGENET_CLASSES: [&str; 1000] = [
     "ear, spike, capitulum",
     "toilet tissue, toilet paper, bathroom tissue"
 ];
-
-

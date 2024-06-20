@@ -1,7 +1,6 @@
 pub mod ml {
     wasmtime::component::bindgen!("ml" in "tests/core-wasi-test/wit");
 
-    
     use std::fmt::format;
 
     //use anyhow::Ok;
@@ -53,7 +52,7 @@ pub mod ml {
 
     pub struct GraphExecutionContextInternalData {
         pub cnn_network: openvino::CNNNetwork,
-        pub executable_network: Mutex<openvino::ExecutableNetwork>,
+        //pub executable_network: Mutex<openvino::ExecutableNetwork>,
         pub infer_request: openvino::InferRequest,
     }
 
@@ -77,15 +76,19 @@ pub mod ml {
         pub errors: table::Table<ErrorInternalData>,
     }
 
-
-
     impl MLHostImpl {
-
-        fn new_error(errors: &mut table::Table<ErrorInternalData>, code: ErrorCode, message: String) -> Resource<errors::Error> {
+        fn new_error(
+            errors: &mut table::Table<ErrorInternalData>,
+            code: ErrorCode,
+            message: String,
+        ) -> Resource<errors::Error> {
             errors
-                .push(ErrorInternalData { code: code, message: message,})
-            .map(Resource::<errors::Error>::new_own)
-            .expect("Can't allocate error")
+                .push(ErrorInternalData {
+                    code: code,
+                    message: message,
+                })
+                .map(Resource::<errors::Error>::new_own)
+                .expect("Can't allocate error")
         }
 
         fn init_execution_context_internal(
@@ -95,64 +98,73 @@ pub mod ml {
         ) -> Result<Resource<inference::GraphExecutionContext>, anyhow::Error> {
             if openvino.is_none() {
                 openvino.replace(openvino::Core::new(None)?);
-            }   
+            }
             if openvino.is_some() {
                 let mut cnn_network = openvino
                     .as_mut()
                     .context("Can't create openvino graph without backend")?
                     .read_network_from_buffer(&graph.xml, &graph.weights)?;
 
-                    // Construct OpenVINO graph structures: `cnn_network` contains the graph
-                    // structure, `exec_network` can perform inference.
-                    //let core = self
-                    //    .0
-                    //    .as_mut()
-                    //    .expect("openvino::Core was previously constructed");
-                    //let mut cnn_network = core.read_network_from_buffer(&xml, &weights)?;
+                // Construct OpenVINO graph structures: `cnn_network` contains the graph
+                // structure, `exec_network` can perform inference.
+                //let core = self
+                //    .0
+                //    .as_mut()
+                //    .expect("openvino::Core was previously constructed");
+                //let mut cnn_network = core.read_network_from_buffer(&xml, &weights)?;
 
-                    // TODO: this is a temporary workaround. We need a more elegant way to
-                    // specify the layout in the long run. However, without this newer
-                    // versions of OpenVINO will fail due to parameter mismatch.
-                    for i in 0..cnn_network.get_inputs_len().unwrap() {
-                        let name = cnn_network.get_input_name(i)?;
-                        cnn_network.set_input_layout(&name, Layout::NHWC)?;
-                    }
+                // TODO: this is a temporary workaround. We need a more elegant way to
+                // specify the layout in the long run. However, without this newer
+                // versions of OpenVINO will fail due to parameter mismatch.
+                for i in 0..cnn_network.get_inputs_len().unwrap() {
+                    let name = cnn_network.get_input_name(i)?;
+                    cnn_network.set_input_layout(&name, Layout::NHWC)?;
+                }
 
-                    let mut exec_network = openvino
-                        .as_mut()
-                        .expect("")
-                        .load_network(&cnn_network, map_execution_target_to_string(graph.target))?;
-                    let infer_request = exec_network
-                        .create_infer_request()
-                        .context("Can't create InferRequest")?;
-                    let graph_execution_context = GraphExecutionContextInternalData {
-                        cnn_network: cnn_network,
-                        executable_network: Mutex::new(exec_network),
-                        infer_request: infer_request,
-                    };
-                    return executions
-                                .push(graph_execution_context)
-                                .map(Resource::<inference::GraphExecutionContext>::new_own)
-                                .map_err(|_|anyhow!("Can't store execution context"));
+                let mut exec_network = openvino
+                    .as_mut()
+                    .expect("")
+                    .load_network(&cnn_network, map_execution_target_to_string(graph.target))?;
+                let infer_request = exec_network
+                    .create_infer_request()
+                    .context("Can't create InferRequest")?;
+                let graph_execution_context = GraphExecutionContextInternalData {
+                    cnn_network: cnn_network,
+                    //executable_network: Mutex::new(exec_network),
+                    infer_request: infer_request,
+                };
+                return executions
+                    .push(graph_execution_context)
+                    .map(Resource::<inference::GraphExecutionContext>::new_own)
+                    .map_err(|_| anyhow!("Can't store execution context"));
             }
             Err(anyhow!("Can't create openvino backend"))
         }
 
-        fn get_output_internal(graph_execution: &mut GraphExecutionContextInternalData, input_name: String) -> Result<TensorInternalData, String> {
-            let index = input_name
-            .parse::<usize>()
-            .map_err(|err| format!("Can't parse {} to usize for input_name", input_name))?;
+        fn get_output_internal(
+            graph_execution: &mut GraphExecutionContextInternalData,
+            input_name: String,
+        ) -> Result<TensorInternalData, String> {
+            let index = input_name.parse::<usize>().map_err(|err| {
+                format!(
+                    "Can't parse {} to usize for input_name, err = {err}",
+                    input_name
+                )
+            })?;
             let output_name = graph_execution
                 .cnn_network
                 .get_output_name(index)
-                .map_err(|err| format!("Can't find output name for ID = {index}"))?;
+                .map_err(|err| format!("Can't find output name for ID = {index}, err = {err}"))?;
 
             let blob = graph_execution
                 .infer_request
                 .get_blob(&output_name)
-                .map_err(|err|  format!("Can't get blob for output name = {output_name}"))?;
-            let tensor_desc = blob.tensor_desc()
-                .map_err(|err| format!("Can't get blob description"))?;
+                .map_err(|err| {
+                    format!("Can't get blob for output name = {output_name}, err = {err}")
+                })?;
+            let tensor_desc = blob
+                .tensor_desc()
+                .map_err(|err| format!("Can't get blob description, err = {err}"))?;
             let buffer = blob
                 .buffer()
                 .map_err(|err| format!("Can't get blob buffer, error = {err}"))?
@@ -171,7 +183,6 @@ pub mod ml {
             };
             Ok(tensor)
         }
-
     }
 
     impl graph::HostGraph for MLHostImpl {
@@ -180,24 +191,22 @@ pub mod ml {
             graph: Resource<Graph>,
         ) -> Result<Resource<inference::GraphExecutionContext>, Resource<errors::Error>> {
             let res = match self.graphs.get(graph.rep()) {
-                Some(graph) => {
-                    MLHostImpl::init_execution_context_internal(graph, &mut self.openvino, &mut self.executions)
-                    .map_err(|err| 
-                        ErrorInternalData {
-                        code: ErrorCode::RuntimeError,
-                        message: err.to_string(),
-                    }
+                Some(graph) => MLHostImpl::init_execution_context_internal(
+                    graph,
+                    &mut self.openvino,
+                    &mut self.executions,
                 )
-                }
-                None => {
-                    Err(ErrorInternalData {
-                        code: ErrorCode::RuntimeError,
-                        message: "Can't create graph execution context".to_string(),
-                    })
-                }
+                .map_err(|err| ErrorInternalData {
+                    code: ErrorCode::RuntimeError,
+                    message: err.to_string(),
+                }),
+                None => Err(ErrorInternalData {
+                    code: ErrorCode::RuntimeError,
+                    message: "Can't create graph execution context".to_string(),
+                }),
             };
             match res {
-                Ok(res) => { return Ok(res) }
+                Ok(res) => return Ok(res),
                 Err(e) => {
                     return Err(MLHostImpl::new_error(&mut self.errors, e.code, e.message));
                 }
@@ -207,25 +216,24 @@ pub mod ml {
         fn drop(&mut self, graph: Resource<Graph>) -> Result<(), anyhow::Error> {
             self.graphs
                 .remove(graph.rep())
-                .context(format!("Can't find graph with ID = {}", graph.rep()))?;
-            Ok(())
+                .context(format!("Can't find graph with ID = {}", graph.rep()))
+                .map(|_| ())
         }
     }
 
     impl errors::HostError for MLHostImpl {
-        fn new(
-            &mut self,
-            code: errors::ErrorCode,
-            message: String,
-        ) -> Resource<errors::Error> {
+        fn new(&mut self, code: errors::ErrorCode, message: String) -> Resource<errors::Error> {
             MLHostImpl::new_error(&mut self.errors, code, message)
         }
 
-        fn drop(&mut self, error: Resource<errors::Error>) -> std::result::Result<(), anyhow::Error> {
-            if let Some(e) = self.errors.remove(error.rep()) {
-                return Ok(());
-            }
-            Err(anyhow!("Can't find error with ID = {}", error.rep()))
+        fn drop(
+            &mut self,
+            error: Resource<errors::Error>,
+        ) -> std::result::Result<(), anyhow::Error> {
+            self.errors
+                .remove(error.rep())
+                .context(format!("Can't find error with ID = {}", error.rep()))
+                .map(|_| ())
         }
 
         fn code(&mut self, error: Resource<errors::Error>) -> ErrorCode {
@@ -259,42 +267,34 @@ pub mod ml {
                 .map(Resource::<tensor::Tensor>::new_own)
                 .expect("Can't allocate tensor")
         }
-        fn dimensions(
-            &mut self,
-            tensor: Resource<tensor::Tensor>,
-        ) -> Vec<u32> {    
+        fn dimensions(&mut self, tensor: Resource<tensor::Tensor>) -> Vec<u32> {
             if let Some(t) = self.tensors.get(tensor.rep()) {
                 return t.tensor_dimensions.clone();
             }
             panic!("Can't find tensor with ID = {}", tensor.rep());
         }
 
-        fn ty(
-            &mut self,
-            tensor: Resource<tensor::Tensor>,
-        ) -> tensor::TensorType {
+        fn ty(&mut self, tensor: Resource<tensor::Tensor>) -> tensor::TensorType {
             if let Some(t) = self.tensors.get(tensor.rep()) {
                 return t.tensor_type;
             }
             panic!("Can't find tensor with ID = {}", tensor.rep());
         }
 
-        fn data(
-            &mut self,
-            tensor: Resource<tensor::Tensor>,
-        ) -> tensor::TensorData {
+        fn data(&mut self, tensor: Resource<tensor::Tensor>) -> tensor::TensorData {
             if let Some(t) = self.tensors.get(tensor.rep()) {
                 return t.tensor_data.clone();
             }
             panic!("Can't find tensor with ID = {}", tensor.rep());
         }
-        fn drop(&mut self, tensor: Resource<tensor::Tensor>) -> std::result::Result<(), anyhow::Error> {
+        fn drop(
+            &mut self,
+            tensor: Resource<tensor::Tensor>,
+        ) -> std::result::Result<(), anyhow::Error> {
             self.tensors
                 .remove(tensor.rep())
                 .context(format!("Can't find tensor with ID = {}", tensor.rep()))
-                .map(|_|())
-                
-
+                .map(|_| ())
         }
     }
 
@@ -321,27 +321,29 @@ pub mod ml {
                 .map(|&d| d as usize)
                 .collect::<Vec<_>>();
             let desc = TensorDesc::new(Layout::NHWC, &dimensions, precision);
-            let blob = openvino::Blob::new(&desc, &tensor_resource.tensor_data).expect("Error in Blob::new");
+            let blob = openvino::Blob::new(&desc, &tensor_resource.tensor_data)
+                .expect("Error in Blob::new");
             let execution_context: &mut GraphExecutionContextInternalData = self
                 .executions
                 .get_mut(graph_execution_context.rep())
-                .expect(format!(
-                    "Can't find graph execution context with ID = {}",
-                    graph_execution_context.rep()
-                ).as_str());
+                .expect(
+                    format!(
+                        "Can't find graph execution context with ID = {}",
+                        graph_execution_context.rep()
+                    )
+                    .as_str(),
+                );
             let input_name = execution_context
                 .cnn_network
                 .get_input_name(index)
                 .expect(format!("Can't find input with name = {}", index).as_str());
             match execution_context.infer_request.set_blob(&input_name, &blob) {
                 Ok(res) => Ok(res),
-                Err(err) => Err(
-                    self.new(
+                Err(err) => Err(self.new(
                     ErrorCode::RuntimeError,
                     format!("Inference error = {:?}", err.to_string()),
                 )),
             }
-            
         }
 
         fn compute(
@@ -351,16 +353,21 @@ pub mod ml {
             let graph_execution = self
                 .executions
                 .get_mut(graph_execution_context.rep())
-                .ok_or(MLHostImpl::new_error(&mut self.errors,
-                        ErrorCode::RuntimeError, 
-                        format!("Can't find graph execution context with ID = {}", graph_execution_context.rep())))?;
+                .ok_or(MLHostImpl::new_error(
+                    &mut self.errors,
+                    ErrorCode::RuntimeError,
+                    format!(
+                        "Can't find graph execution context with ID = {}",
+                        graph_execution_context.rep()
+                    ),
+                ))?;
             match graph_execution.infer_request.infer() {
                 Ok(..) => Ok(()),
-                Err(err) => Err(
-                    MLHostImpl::new_error(&mut self.errors,
-                         ErrorCode::RuntimeError, 
-                         format!("Inference error = {:?}", err.to_string()))
-                ),
+                Err(err) => Err(MLHostImpl::new_error(
+                    &mut self.errors,
+                    ErrorCode::RuntimeError,
+                    format!("Inference error = {:?}", err.to_string()),
+                )),
             }
         }
 
@@ -368,28 +375,34 @@ pub mod ml {
             &mut self,
             graph_execution_context: Resource<GraphExecutionContext>,
             input_name: String,
-        ) -> Result<Resource<tensor::Tensor>, Resource<errors::Error>>
-        {
-            
+        ) -> Result<Resource<tensor::Tensor>, Resource<errors::Error>> {
             let graph_execution = self
                 .executions
                 .get_mut(graph_execution_context.rep())
-                .ok_or(format!("Can't find graph execution context with ID = {}", graph_execution_context.rep())).unwrap();
+                .ok_or(format!(
+                    "Can't find graph execution context with ID = {}",
+                    graph_execution_context.rep()
+                ))
+                .unwrap();
 
             match MLHostImpl::get_output_internal(graph_execution, input_name) {
-                Ok(tensor) => {
-                    self.tensors
+                Ok(tensor) => self
+                    .tensors
                     .push(tensor)
                     .map(Resource::<tensor::Tensor>::new_own)
-                    .map_err(|_| self.new(ErrorCode::RuntimeError, format!("Can't create tensor for get_output")))
-                }
-                Err(err) => {
-                    Err(MLHostImpl::new_error(&mut self.errors,
-                        ErrorCode::RuntimeError, 
-                        err))
-                }
+                    .map_err(|_| {
+                        MLHostImpl::new_error(
+                            &mut self.errors,
+                            ErrorCode::RuntimeError,
+                            format!("Can't create tensor for get_output"),
+                        )
+                    }),
+                Err(err) => Err(MLHostImpl::new_error(
+                    &mut self.errors,
+                    ErrorCode::RuntimeError,
+                    err,
+                )),
             }
-            
         }
 
         fn drop(
@@ -400,9 +413,7 @@ pub mod ml {
             self.executions
                 .remove(id)
                 .context("{Can't drow GraphExecutionContext with id = {id}")
-                .map(|_|())
-
-            
+                .map(|_| ())
         }
     }
 
@@ -415,14 +426,18 @@ pub mod ml {
             target: ExecutionTarget,
         ) -> Result<Resource<Graph>, Resource<errors::Error>> {
             if graph.len() != 2 {
-                return Err(MLHostImpl::new_error(&mut self.errors,
-                    ErrorCode::RuntimeError, 
-                    format!("Expected 2 elements in graph builder vector")));
+                return Err(MLHostImpl::new_error(
+                    &mut self.errors,
+                    ErrorCode::RuntimeError,
+                    format!("Expected 2 elements in graph builder vector"),
+                ));
             }
             if graph_encoding != GraphEncoding::Openvino {
-                return Err(MLHostImpl::new_error(&mut self.errors,
-                    ErrorCode::RuntimeError, 
-                    format!("Only OpenVINO encoding is supported")));
+                return Err(MLHostImpl::new_error(
+                    &mut self.errors,
+                    ErrorCode::RuntimeError,
+                    format!("Only OpenVINO encoding is supported"),
+                ));
             }
             // Read the guest array.
             let graph_internal_data = GraphInternalData {
@@ -453,7 +468,7 @@ pub mod ml {
             &mut self,
             _graph: String,
         ) -> Result<Resource<Graph>, Resource<errors::Error>> {
-            panic!("[graph::Host] fn load_by_name -> Not implemented"); 
+            panic!("[graph::Host] fn load_by_name -> Not implemented");
         }
     }
 
