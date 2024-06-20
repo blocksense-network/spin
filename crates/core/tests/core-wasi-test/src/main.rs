@@ -24,21 +24,16 @@ mod ml {
     });
 }
 
-mod imagenet_classes;
 mod imagenet;
+mod imagenet_classes;
 
 use imagenet::imagenet_openvino_test;
-
-
 
 use std::path::Path;
 
 use crate::hello::test::test::gggg2::say_hello;
 
-
-
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
-
 
 fn main() -> Result {
     let mut args = std::env::args();
@@ -89,7 +84,6 @@ fn main() -> Result {
             let target_as_string = args.next().expect("target");
             let image_file_as_string = args.next().expect("image_file");
             _ = imagenet_openvino_test(path_as_string, target_as_string, image_file_as_string);
-
         }
         "sleep" => {
             let duration =
