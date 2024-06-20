@@ -25,8 +25,8 @@ pub mod hello {
     pub struct HelloHostImpl {}
 
     impl gggg2::Host for HelloHostImpl {
-        fn say_hello(&mut self, x: String) -> wasmtime::Result<String> {
-            Ok(format!("Hello bace {x}!"))
+        fn say_hello(&mut self, x: String) -> String {
+            format!("Hello bace {x}!")
         }
     }
 }

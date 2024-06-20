@@ -2,7 +2,7 @@
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-extern crate curl;
+//extern crate curl;
 
 use std::io::Write;
 use curl::easy::Easy;
