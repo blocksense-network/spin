@@ -36,5 +36,5 @@ spin-componentize = { workspace = true }
 futures = "0.3"
 
 [build-dependencies]
-curl = "^0.4"
+curl = { version = "^0.4", features = ["rustls"] }
 anyhow = "^1"
