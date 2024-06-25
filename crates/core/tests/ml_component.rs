@@ -1,10 +1,6 @@
 pub mod ml {
     wasmtime::component::bindgen!("ml" in "tests/core-wasi-test/wit");
 
-    use std::fmt::format;
-
-    //use anyhow::Ok;
-    //use std::result::Result::Ok;
     use spin_core::HostComponent;
 
     use anyhow::{anyhow, Context};
@@ -17,12 +13,9 @@ pub mod ml {
     use test::test::errors::ErrorCode;
     use test::test::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
     use test::test::inference::GraphExecutionContext;
-    use tokio::sync::Mutex;
-    use tokio::time::error::Elapsed;
     use wasmtime::component::Resource;
 
     use openvino::{Layout, Precision, TensorDesc};
-    use table;
 
     #[derive(Clone)]
     pub struct MLHostComponent;
@@ -83,10 +76,7 @@ pub mod ml {
             message: String,
         ) -> Resource<errors::Error> {
             errors
-                .push(ErrorInternalData {
-                    code: code,
-                    message: message,
-                })
+                .push(ErrorInternalData { code, message })
                 .map(Resource::<errors::Error>::new_own)
                 .expect("Can't allocate error")
         }
@@ -129,9 +119,9 @@ pub mod ml {
                     .create_infer_request()
                     .context("Can't create InferRequest")?;
                 let graph_execution_context = GraphExecutionContextInternalData {
-                    cnn_network: cnn_network,
+                    cnn_network,
                     //executable_network: Mutex::new(exec_network),
-                    infer_request: infer_request,
+                    infer_request,
                 };
                 return executions
                     .push(graph_execution_context)
@@ -168,16 +158,14 @@ pub mod ml {
             let buffer = blob
                 .buffer()
                 .map_err(|err| format!("Can't get blob buffer, error = {err}"))?
-                .iter()
-                .map(|&d| d as u8)
-                .collect::<Vec<_>>();
+                .to_vec();
             let tensor_dimensions = tensor_desc
                 .dims()
                 .iter()
                 .map(|&d| d as u32)
                 .collect::<Vec<_>>();
             let tensor = TensorInternalData {
-                tensor_dimensions: tensor_dimensions,
+                tensor_dimensions,
                 tensor_type: map_precision_to_tensor_type(tensor_desc.precision()),
                 tensor_data: buffer,
             };
@@ -206,10 +194,8 @@ pub mod ml {
                 }),
             };
             match res {
-                Ok(res) => return Ok(res),
-                Err(e) => {
-                    return Err(MLHostImpl::new_error(&mut self.errors, e.code, e.message));
-                }
+                Ok(res) => Ok(res),
+                Err(e) => Err(MLHostImpl::new_error(&mut self.errors, e.code, e.message)),
             }
         }
 
@@ -258,9 +244,9 @@ pub mod ml {
             tensor_data: tensor::TensorData,
         ) -> Resource<tensor::Tensor> {
             let tensor = TensorInternalData {
-                tensor_dimensions: tensor_dimensions,
-                tensor_type: tensor_type,
-                tensor_data: tensor_data,
+                tensor_dimensions,
+                tensor_type,
+                tensor_data,
             };
             self.tensors
                 .push(tensor)
@@ -313,7 +299,7 @@ pub mod ml {
             let tensor_resource = self
                 .tensors
                 .get(tensor.rep())
-                .expect(format!("Can't find tensor with ID = {}", tensor.rep()).as_str());
+                .unwrap_or_else(|| panic!("Can't find tensor with ID = {}", tensor.rep()));
             let precision = map_tensor_type_to_precision(tensor_resource.tensor_type);
             let dimensions = tensor_resource
                 .tensor_dimensions
@@ -326,17 +312,11 @@ pub mod ml {
             let execution_context: &mut GraphExecutionContextInternalData = self
                 .executions
                 .get_mut(graph_execution_context.rep())
-                .expect(
-                    format!(
-                        "Can't find graph execution context with ID = {}",
-                        graph_execution_context.rep()
-                    )
-                    .as_str(),
-                );
+                .unwrap_or_else(|| panic!("Can't find tensor with ID = {}", tensor.rep()));
             let input_name = execution_context
                 .cnn_network
                 .get_input_name(index)
-                .expect(format!("Can't find input with name = {}", index).as_str());
+                .unwrap_or_else(|_| panic!("Can't find input with name = {}", index));
             match execution_context.infer_request.set_blob(&input_name, &blob) {
                 Ok(res) => Ok(res),
                 Err(err) => Err(self.new(
@@ -394,7 +374,7 @@ pub mod ml {
                         MLHostImpl::new_error(
                             &mut self.errors,
                             ErrorCode::RuntimeError,
-                            format!("Can't create tensor for get_output"),
+                            "Can't create tensor for get_output".to_string(),
                         )
                     }),
                 Err(err) => Err(MLHostImpl::new_error(
@@ -429,34 +409,30 @@ pub mod ml {
                 return Err(MLHostImpl::new_error(
                     &mut self.errors,
                     ErrorCode::RuntimeError,
-                    format!("Expected 2 elements in graph builder vector"),
+                    "Expected 2 elements in graph builder vector".to_string(),
                 ));
             }
             if graph_encoding != GraphEncoding::Openvino {
                 return Err(MLHostImpl::new_error(
                     &mut self.errors,
                     ErrorCode::RuntimeError,
-                    format!("Only OpenVINO encoding is supported"),
+                    "Only OpenVINO encoding is supported".to_string(),
                 ));
             }
             // Read the guest array.
             let graph_internal_data = GraphInternalData {
                 xml: graph[0].clone(),
                 weights: graph[1].clone(),
-                target: target,
+                target,
             };
             match self.graphs.push(graph_internal_data) {
-                Ok(graph_rep) => {
-                    return Ok(Resource::<Graph>::new_own(graph_rep));
-                }
+                Ok(graph_rep) => Ok(Resource::<Graph>::new_own(graph_rep)),
                 Err(err) => {
                     match self.errors.push(ErrorInternalData {
                         code: ErrorCode::RuntimeError,
                         message: format!("{:?}", err),
                     }) {
-                        Ok(error_rep) => {
-                            return Err(Resource::<errors::Error>::new_own(error_rep));
-                        }
+                        Ok(error_rep) => Err(Resource::<errors::Error>::new_own(error_rep)),
                         Err(err) => {
                             panic!("Can't create internal error for {:?}", err);
                         }

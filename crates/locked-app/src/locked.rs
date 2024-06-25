@@ -294,8 +294,6 @@ pub struct Variable {
 mod test {
     use super::*;
 
-    use crate::values::ValuesMapBuilder;
-
     #[test]
     fn locked_app_with_no_host_reqs_serialises_as_v0_and_v0_deserialises_as_v1() {
         let locked_app = LockedApp {

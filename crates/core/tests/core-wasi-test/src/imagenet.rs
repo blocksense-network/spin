@@ -1,5 +1,4 @@
 use crate::ml::test::test::{graph, inference, tensor};
-use image2tensor;
 use image2tensor::convert_image_to_tensor_bytes;
 
 use crate::imagenet_classes;
@@ -48,7 +47,7 @@ pub fn imagenet_openvino_test(
     let target = map_string_to_execution_target(&target_as_string)?;
     let model = {
         let start_for_elapsed_macro = std::time::Instant::now();
-        let model: Vec<u8> = std::fs::read(&path.join("model.xml"))?;
+        let model: Vec<u8> = std::fs::read(path.join("model.xml"))?;
         let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
         eprintln!(
             "Loaded model from xml {} {}",
@@ -59,7 +58,7 @@ pub fn imagenet_openvino_test(
     };
     let weights = {
         let start_for_elapsed_macro = std::time::Instant::now();
-        let weights = std::fs::read(&path.join("model.bin"))?;
+        let weights = std::fs::read(path.join("model.bin"))?;
         let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
         eprintln!(
             "Loaded weigths {} {}",
@@ -101,7 +100,6 @@ pub fn imagenet_openvino_test(
         image2tensor::TensorType::F32,
         image2tensor::ColorOrder::BGR,
     )
-    .or_else(|e| Err(e))
     .unwrap();
 
     let tensor_id = {
@@ -119,18 +117,16 @@ pub fn imagenet_openvino_test(
     let input_name = "0";
     {
         let start_for_elapsed_macro = std::time::Instant::now();
-        let set_input_result =
-            inference::GraphExecutionContext::set_input(&context, input_name, tensor_id).unwrap();
+        inference::GraphExecutionContext::set_input(&context, input_name, tensor_id).unwrap();
         let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
         eprintln!(
-            "Input set with ID: {:?} {}",
-            set_input_result,
+            "Input set {}",
             elapsed_to_string("GraphExecutionContext::set_input", elapsed)
         );
     }
     {
         let start_for_elapsed_macro = std::time::Instant::now();
-        let _infered_result = inference::GraphExecutionContext::compute(&context).unwrap();
+        inference::GraphExecutionContext::compute(&context).unwrap();
         let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
         eprintln!(
             "Executed graph inference. {}",
@@ -167,12 +163,12 @@ pub fn imagenet_openvino_test(
     {
         let output_vec_f32 =
             unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const f32, 1001) };
-        let results = sort_results(&output_vec_f32);
-        for i in 0..3 {
+        let results = sort_results(output_vec_f32);
+        for res in results.iter().take(3) {
             println!(
                 "{:.2} -> {}",
-                results[i].weight,
-                imagenet_classes::IMAGENET_CLASSES[results[i].index],
+                res.weight,
+                imagenet_classes::IMAGENET_CLASSES[res.index],
             );
         }
     } else {
