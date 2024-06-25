@@ -1,7 +1,7 @@
 #![cfg(test)]
 #![allow(clippy::expect_fun_call)]
 
-use std::{fs, io::Write, path::Path};
+use std::{io::Write, path::Path};
 
 use tempfile::{NamedTempFile, TempPath};
 use toml::Value;
