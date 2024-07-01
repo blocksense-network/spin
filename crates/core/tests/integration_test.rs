@@ -4,13 +4,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-mod ml_component;
-
-use crate::ml_component::ml::MLHostComponent;
+mod test_host_components;
+use crate::test_host_components::ml::ml::MLHostComponent;
+use crate::test_host_components::multiplier::{Multiplier, MultiplierHostComponent};
 
 use anyhow::Context;
 use spin_core::{
-    Component, Config, Engine, HostComponent, I32Exit, Store, StoreBuilder, Trap, WasiVersion,
+    Component, Config, Engine, I32Exit, Store, StoreBuilder, Trap, WasiVersion,
 };
 use tempfile::TempDir;
 use tokio::{fs, io::AsyncWrite};
@@ -292,36 +292,7 @@ async fn run_core_wasi_test_engine<'a>(
     Ok(stdout)
 }
 
-// Simple test HostComponent; multiplies the input by the configured factor
-#[derive(Clone)]
-struct MultiplierHostComponent;
 
-mod multiplier {
-    wasmtime::component::bindgen!("multiplier" in "tests/core-wasi-test/wit");
-}
-
-impl HostComponent for MultiplierHostComponent {
-    type Data = Multiplier;
-
-    fn add_to_linker<T: Send>(
-        linker: &mut spin_core::Linker<T>,
-        get: impl Fn(&mut spin_core::Data<T>) -> &mut Self::Data + Send + Sync + Copy + 'static,
-    ) -> anyhow::Result<()> {
-        multiplier::imports::add_to_linker(linker, get)
-    }
-
-    fn build_data(&self) -> Self::Data {
-        Multiplier(2)
-    }
-}
-
-struct Multiplier(i32);
-
-impl multiplier::imports::Host for Multiplier {
-    fn multiply(&mut self, a: i32) -> i32 {
-        self.0 * a
-    }
-}
 
 // Write with `print!`, required for test output capture
 struct TestWriter(tokio::io::Stdout);
