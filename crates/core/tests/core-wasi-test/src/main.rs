@@ -10,12 +10,6 @@ mod multiplier {
         path: "wit/multiplier.wit"
     });
 }
-mod hello {
-    wit_bindgen::generate!({
-        world: "hello",
-        path: "wit/hello.wit"
-    });
-}
 
 mod ml {
     wit_bindgen::generate!({
@@ -30,8 +24,6 @@ mod imagenet_classes;
 use imagenet::imagenet_openvino_test;
 
 use std::path::Path;
-
-use crate::hello::test::test::gggg2::say_hello;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
@@ -72,11 +64,6 @@ fn main() -> Result {
             let input: i32 = args.next().expect("input").parse().expect("i32");
             eprintln!("multiply {input}");
             let output = multiplier::imports::multiply(input);
-            println!("{output}");
-        }
-        "hello" => {
-            let input: String = args.next().expect("input").parse().expect("String");
-            let output = say_hello(&input);
             println!("{output}");
         }
         "imagenet" => {
