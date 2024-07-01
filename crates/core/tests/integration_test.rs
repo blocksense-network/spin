@@ -4,10 +4,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod test_host_components;
+use crate::test_host_components::ml::ml::MLHostComponent;
+use crate::test_host_components::multiplier::{Multiplier, MultiplierHostComponent};
+
 use anyhow::Context;
-use spin_core::{
-    Component, Config, Engine, HostComponent, I32Exit, Store, StoreBuilder, Trap, WasiVersion,
-};
+use spin_core::{Component, Config, Engine, I32Exit, Store, StoreBuilder, Trap, WasiVersion};
 use tempfile::TempDir;
 use tokio::{fs, io::AsyncWrite};
 
@@ -160,6 +162,56 @@ async fn test_host_component_data_update() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn test_host_component_imagenet_openvino_cpu() {
+    let engine = test_engine();
+    let _handle = engine
+        .find_host_component_handle::<MLHostComponent>()
+        .unwrap();
+    let imagenet_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test-programs/imagenet");
+    println!("imagenet_path = {imagenet_path:?}");
+
+    let stdout = run_core_wasi_test_engine(
+        &engine,
+        ["imagenet", "/", "CPU", "images/0.jpg"],
+        |store_builder| {
+            store_builder
+                .read_only_preopened_dir(&imagenet_path, "/".into())
+                .unwrap();
+        },
+        |_| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(stdout, "0.47 -> Eskimo dog, husky\n0.37 -> Siberian husky\n0.01 -> malamute, malemute, Alaskan malamute");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_host_component_imagenet_openvino_gpu() {
+    let engine = test_engine();
+    let _handle = engine
+        .find_host_component_handle::<MLHostComponent>()
+        .unwrap();
+    let imagenet_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test-programs/imagenet");
+    println!("imagenet_path = {imagenet_path:?}");
+
+    let stdout = run_core_wasi_test_engine(
+        &engine,
+        ["imagenet", "/", "GPU", "images/1.jpg"],
+        |store_builder| {
+            store_builder
+                .read_only_preopened_dir(&imagenet_path, "/".into())
+                .unwrap();
+        },
+        |_| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(stdout, "0.96 -> mountain bike, all-terrain bike, off-roader\n0.01 -> bicycle-built-for-two, tandem bicycle, tandem\n0.00 -> alp");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 #[cfg(not(tarpaulin))]
 async fn test_panic() {
     let err = run_core_wasi_test(["panic"], |_| {}).await.unwrap_err();
@@ -178,6 +230,8 @@ fn test_config() -> Config {
 fn test_engine() -> Engine<()> {
     let mut builder = Engine::builder(&test_config()).unwrap();
     builder.add_host_component(MultiplierHostComponent).unwrap();
+    builder.add_host_component(MLHostComponent).unwrap();
+
     builder
         .link_import(|l, _| wasmtime_wasi::add_to_linker_async(l))
         .unwrap();
@@ -210,6 +264,7 @@ async fn run_core_wasi_test_engine<'a>(
     let mut store = store_builder.build()?;
     let module_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/test-programs/core-wasi-test.wasm");
+    println!("module_path = {module_path:?}");
     let component = spin_componentize::componentize_command(&fs::read(module_path).await?)?;
     let component = Component::new(engine.as_ref(), &component)?;
     let instance_pre = engine.instantiate_pre(&component)?;
@@ -233,37 +288,6 @@ async fn run_core_wasi_test_engine<'a>(
         .trim_end()
         .into();
     Ok(stdout)
-}
-
-// Simple test HostComponent; multiplies the input by the configured factor
-#[derive(Clone)]
-struct MultiplierHostComponent;
-
-mod multiplier {
-    wasmtime::component::bindgen!("multiplier" in "tests/core-wasi-test/wit");
-}
-
-impl HostComponent for MultiplierHostComponent {
-    type Data = Multiplier;
-
-    fn add_to_linker<T: Send>(
-        linker: &mut spin_core::Linker<T>,
-        get: impl Fn(&mut spin_core::Data<T>) -> &mut Self::Data + Send + Sync + Copy + 'static,
-    ) -> anyhow::Result<()> {
-        multiplier::imports::add_to_linker(linker, get)
-    }
-
-    fn build_data(&self) -> Self::Data {
-        Multiplier(2)
-    }
-}
-
-struct Multiplier(i32);
-
-impl multiplier::imports::Host for Multiplier {
-    fn multiply(&mut self, a: i32) -> i32 {
-        self.0 * a
-    }
 }
 
 // Write with `print!`, required for test output capture

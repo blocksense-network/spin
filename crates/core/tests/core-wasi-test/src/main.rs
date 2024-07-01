@@ -4,17 +4,33 @@
 //! invalid argument(s).
 
 use std::time::Duration;
+mod multiplier {
+    wit_bindgen::generate!({
+        world: "multiplier",
+        path: "wit/multiplier.wit"
+    });
+}
 
-wit_bindgen::generate!({
-    world: "multiplier",
-    path: "wit/multiplier.wit"
-});
+mod ml {
+    wit_bindgen::generate!({
+        world: "ml",
+        path: "wit/ml.wit"
+    });
+}
+
+mod imagenet;
+mod imagenet_classes;
+
+use imagenet::imagenet_openvino_test;
+
+use std::path::Path;
 
 type Result = std::result::Result<(), Box<dyn std::error::Error>>;
 
 fn main() -> Result {
     let mut args = std::env::args();
     let cmd = args.next().expect("cmd");
+
     match cmd.as_str() {
         "noop" => (),
         "echo" => {
@@ -47,8 +63,14 @@ fn main() -> Result {
         "multiply" => {
             let input: i32 = args.next().expect("input").parse().expect("i32");
             eprintln!("multiply {input}");
-            let output = imports::multiply(input);
+            let output = multiplier::imports::multiply(input);
             println!("{output}");
+        }
+        "imagenet" => {
+            let path_as_string = args.next().expect("path");
+            let target_as_string = args.next().expect("target");
+            let image_file_as_string = args.next().expect("image_file");
+            _ = imagenet_openvino_test(path_as_string, target_as_string, image_file_as_string);
         }
         "sleep" => {
             let duration =

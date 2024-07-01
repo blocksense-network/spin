@@ -20,6 +20,8 @@ tokio = "1.0"
 bytes = "1.0"
 spin-telemetry = { path = "../telemetry" }
 http = "1.0"
+openvino = { version = "0.6.0", features = ["runtime-linking",] }
+table = { path = "../table" }
 
 [target.'cfg(unix)'.dependencies]
 rustix = "0.37.19"
@@ -32,3 +34,7 @@ tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 spin-componentize = { workspace = true }
 futures = "0.3"
+
+[build-dependencies]
+curl = { version = "^0.4", features = ["rustls"] }
+anyhow = "^1"
