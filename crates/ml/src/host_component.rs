@@ -1,4 +1,5 @@
 use spin_core::HostComponent;
+use spin_app::DynamicHostComponent;
 use spin_world::v2 as ml_wit;
 
 use crate::host_impl::MLHostImpl;
@@ -23,5 +24,19 @@ impl HostComponent for MLHostComponent {
         MLHostImpl {
             ..Default::default()
         }
+    }
+}
+
+impl DynamicHostComponent for MLHostComponent {
+    fn update_data(
+        &self,
+        _data: &mut Self::Data,
+        _component: &spin_app::AppComponent,
+    ) -> anyhow::Result<()> {
+        /*let hosts = component
+            .get_metadata(ALLOWED_HOSTS_KEY)?
+            .unwrap_or_default();
+        data.allowed_hosts = AllowedHostsConfig::parse(&hosts, self.resolver.get().unwrap())?;*/
+        Ok(())
     }
 }

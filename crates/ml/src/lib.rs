@@ -1,4 +1,4 @@
-mod host_component;
+pub mod host_component;
 mod host_impl;
 
 

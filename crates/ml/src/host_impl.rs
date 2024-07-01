@@ -12,7 +12,6 @@ use tokio::sync::Mutex;
 use spin_core::wasmtime::component::Resource;
 
 use openvino::{Layout, Precision, TensorDesc};
-use table;
 
 
 #[derive(Debug)]

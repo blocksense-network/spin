@@ -1,7 +1,7 @@
-use crate::ml::fermyon::spin::{graph, inference, tensor};
+use crate::ml::fermyon::spin::{graph::{self, GraphExecutionContext}, inference, tensor};
 use image2tensor::convert_image_to_tensor_bytes;
 use crate::imagenet_classes;
-use std::path::Path;
+use std::{path::Path, task::Context};
 
 pub fn elapsed_to_string(fn_name: &str, elapsed: u128) -> String {
     if elapsed < 1000 {
@@ -33,15 +33,11 @@ fn map_string_to_execution_target(target: &str) -> Result<graph::ExecutionTarget
         "CPU" => Ok(graph::ExecutionTarget::Cpu),
         "GPU" => Ok(graph::ExecutionTarget::Gpu),
         "TPU" => Ok(graph::ExecutionTarget::Tpu),
-        _ => Err(format!("Unknown execution targer = {}", target)),
+        _     => Err(format!("Unknown execution targer = {}", target)),
     }
 }
 
-pub fn imagenet_openvino_test(
-    path_as_string: String,
-    target_as_string: String,
-    image_file: String,
-) -> std::result::Result<(), Box<dyn std::error::Error>> {
+pub fn initialize_imagenet(path_as_string: String, target_as_string: String) -> Result<GraphExecutionContext, Box<dyn std::error::Error>>{
     let path = Path::new(&path_as_string);
     let target = map_string_to_execution_target(&target_as_string)?;
     let model = {
@@ -90,8 +86,16 @@ pub fn imagenet_openvino_test(
         );
         context
     };
+    Ok(context)
+}
 
-    let tensor_dimensions: Vec<u32> = vec![1, 3, 224, 224];
+pub fn imagenet_openvino_test(
+    path_as_string: String,
+    target_as_string: String,
+    image_file: String,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let context = initialize_imagenet(path_as_string, target_as_string).unwrap();
+        let tensor_dimensions: Vec<u32> = vec![1, 3, 224, 224];
     let tensor_data = convert_image_to_tensor_bytes(
         &image_file,
         tensor_dimensions[2],
