@@ -4,10 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-mod hello_component;
 mod ml_component;
 
-use crate::hello_component::hello::{HelloHostComponent, HelloHostImpl};
 use crate::ml_component::ml::MLHostComponent;
 
 use anyhow::Context;
@@ -166,28 +164,6 @@ async fn test_host_component_data_update() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_host_component_hello() {
-    let engine = test_engine();
-    let hello_handle = engine
-        .find_host_component_handle::<HelloHostComponent>()
-        .unwrap();
-
-    let stdout = run_core_wasi_test_engine(
-        &engine,
-        ["hello", "GGyci"],
-        |store_builder| {
-            store_builder
-                .host_components_data()
-                .set(hello_handle, HelloHostImpl {});
-        },
-        |_| {},
-    )
-    .await
-    .unwrap();
-    assert_eq!(stdout, "Hello bace GGyci!");
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn test_host_component_imagenet_openvino_cpu() {
     let engine = test_engine();
     let _handle = engine
@@ -256,7 +232,6 @@ fn test_config() -> Config {
 fn test_engine() -> Engine<()> {
     let mut builder = Engine::builder(&test_config()).unwrap();
     builder.add_host_component(MultiplierHostComponent).unwrap();
-    builder.add_host_component(HelloHostComponent).unwrap();
     builder.add_host_component(MLHostComponent).unwrap();
 
     builder

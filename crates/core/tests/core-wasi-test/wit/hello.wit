@@ -1,9 +1,0 @@
-package test:test;
-
-world hello {
-  import gggg2;
-}
-
-interface gggg2 {
-  say-hello: func(x: string) -> string;
-}
