@@ -9,9 +9,7 @@ use crate::test_host_components::ml::ml::MLHostComponent;
 use crate::test_host_components::multiplier::{Multiplier, MultiplierHostComponent};
 
 use anyhow::Context;
-use spin_core::{
-    Component, Config, Engine, I32Exit, Store, StoreBuilder, Trap, WasiVersion,
-};
+use spin_core::{Component, Config, Engine, I32Exit, Store, StoreBuilder, Trap, WasiVersion};
 use tempfile::TempDir;
 use tokio::{fs, io::AsyncWrite};
 
@@ -291,8 +289,6 @@ async fn run_core_wasi_test_engine<'a>(
         .into();
     Ok(stdout)
 }
-
-
 
 // Write with `print!`, required for test output capture
 struct TestWriter(tokio::io::Stdout);

@@ -3,17 +3,19 @@ use image2tensor::convert_image_to_tensor_bytes;
 
 use crate::imagenet_classes;
 use crate::Path;
+use std::time::Duration;
 
-pub fn elapsed_to_string(fn_name: &str, elapsed: u128) -> String {
-    if elapsed < 1000 {
-        format!("`{}` took {} ns", fn_name, elapsed)
-    } else if elapsed < 1000 * 1000 {
-        format!("`{}` took {:.2} µs", fn_name, elapsed as f64 / 1000.0)
+pub fn elapsed_to_string(fn_name: &str, elapsed: &Duration) -> String {
+    let elapsed_ns = elapsed.as_nanos();
+    if elapsed_ns < 1000 {
+        format!("`{}` took {} ns", fn_name, elapsed_ns)
+    } else if elapsed_ns < 1000 * 1000 {
+        format!("`{}` took {:.2} µs", fn_name, elapsed_ns as f64 / 1000.0)
     } else {
         format!(
             "`{}` took {:.2} ms",
             fn_name,
-            elapsed as f64 / 1000.0 / 1000.0
+            elapsed_ns as f64 / 1000.0 / 1000.0
         )
     }
 }
@@ -48,22 +50,22 @@ pub fn imagenet_openvino_test(
     let model = {
         let start_for_elapsed_macro = std::time::Instant::now();
         let model: Vec<u8> = std::fs::read(path.join("model.xml"))?;
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
+        let elapsed = start_for_elapsed_macro.elapsed();
         eprintln!(
             "Loaded model from xml {} {}",
             bytes_to_string(model.len()),
-            elapsed_to_string("fs::read", elapsed)
+            elapsed_to_string("fs::read", &elapsed)
         );
         model
     };
     let weights = {
         let start_for_elapsed_macro = std::time::Instant::now();
         let weights = std::fs::read(path.join("model.bin"))?;
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
+        let elapsed = start_for_elapsed_macro.elapsed();
         eprintln!(
             "Loaded weigths {} {}",
             bytes_to_string(weights.len()),
-            elapsed_to_string("fs::read", elapsed)
+            elapsed_to_string("fs::read", &elapsed)
         );
         weights
     };
@@ -71,23 +73,23 @@ pub fn imagenet_openvino_test(
         let start_for_elapsed_macro = std::time::Instant::now();
         let imagenet_graph =
             graph::load(&[model, weights], graph::GraphEncoding::Openvino, target).unwrap();
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
+        let elapsed = start_for_elapsed_macro.elapsed();
         eprintln!("---- {:?} ----", target);
         eprintln!(
             "Loaded graph with ID: {:?} {}",
             imagenet_graph,
-            elapsed_to_string("graph::load", elapsed)
+            elapsed_to_string("graph::load", &elapsed)
         );
         imagenet_graph
     };
     let context = {
         let start_for_elapsed_macro = std::time::Instant::now();
         let context = graph::Graph::init_execution_context(&imagenet_graph).unwrap();
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
+        let elapsed = start_for_elapsed_macro.elapsed();
         eprintln!(
             "Created context with ID: {:?} {}",
             context,
-            elapsed_to_string("Graph::init_execution_context", elapsed)
+            elapsed_to_string("Graph::init_execution_context", &elapsed)
         );
         context
     };
@@ -106,11 +108,11 @@ pub fn imagenet_openvino_test(
         let start_for_elapsed_macro = std::time::Instant::now();
         let tensor_type = tensor::TensorType::Fp32;
         let tensor_id = tensor::Tensor::new(&tensor_dimensions, tensor_type, &tensor_data);
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
+        let elapsed = start_for_elapsed_macro.elapsed();
         eprintln!(
             "Created tensor with ID: {:?} {}",
             tensor_id,
-            elapsed_to_string("Tensor::new", elapsed)
+            elapsed_to_string("Tensor::new", &elapsed)
         );
         tensor_id
     };
@@ -118,29 +120,29 @@ pub fn imagenet_openvino_test(
     {
         let start_for_elapsed_macro = std::time::Instant::now();
         inference::GraphExecutionContext::set_input(&context, input_name, tensor_id).unwrap();
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
+        let elapsed = start_for_elapsed_macro.elapsed();
         eprintln!(
             "Input set {}",
-            elapsed_to_string("GraphExecutionContext::set_input", elapsed)
+            elapsed_to_string("GraphExecutionContext::set_input", &elapsed)
         );
     }
     {
         let start_for_elapsed_macro = std::time::Instant::now();
         inference::GraphExecutionContext::compute(&context).unwrap();
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
+        let elapsed = start_for_elapsed_macro.elapsed();
         eprintln!(
             "Executed graph inference. {}",
-            elapsed_to_string("GraphExecutionContext::compute", elapsed)
+            elapsed_to_string("GraphExecutionContext::compute", &elapsed)
         );
     }
     let output_result_id = {
         let start_for_elapsed_macro = std::time::Instant::now();
         let output_result_id =
             inference::GraphExecutionContext::get_output(&context, input_name).unwrap();
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
+        let elapsed = start_for_elapsed_macro.elapsed();
         eprintln!(
             "Obtaining output {}",
-            elapsed_to_string("GraphExecutionContext::get_output", elapsed)
+            elapsed_to_string("GraphExecutionContext::get_output", &elapsed)
         );
         output_result_id
     };
@@ -149,10 +151,10 @@ pub fn imagenet_openvino_test(
         let output_data = tensor::Tensor::data(&output_result_id);
         let output_dimensions = tensor::Tensor::dimensions(&output_result_id);
         let output_type = tensor::Tensor::ty(&output_result_id);
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
+        let elapsed = start_for_elapsed_macro.elapsed();
         eprintln!(
             "Copying data from tensor. {}",
-            elapsed_to_string("Tensor::data+dimensions+type", elapsed)
+            elapsed_to_string("Tensor::data+dimensions+type", &elapsed)
         );
         (output_data, output_dimensions, output_type)
     };
