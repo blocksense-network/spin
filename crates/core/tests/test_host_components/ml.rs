@@ -12,14 +12,6 @@ pub mod ml {
     use ml_wit::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
     use ml_wit::inference::GraphExecutionContext;
 
-<<<<<<< HEAD:crates/core/tests/test_host_components/ml.rs
-    use test::test::errors::ErrorCode;
-    use test::test::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
-    use test::test::inference::GraphExecutionContext;
-=======
-    use tokio::sync::Mutex;
-    use tokio::time::error::Elapsed;
->>>>>>> c7268289 (Code compiles ... but not after rebase):crates/core/tests/ml_component.rs
     use wasmtime::component::Resource;
 
     use openvino::{Layout, Precision, TensorDesc};
