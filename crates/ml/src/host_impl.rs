@@ -1,18 +1,18 @@
-
-
-use spin_core::async_trait;
 use anyhow::{anyhow, Context};
-use spin_world::v2 as ml_wit;
-use ml_wit::{errors, graph, inference, tensor};
-use ml_wit::errors::{HostError, ErrorCode};
+use ml_wit::errors::{ErrorCode, HostError};
 use ml_wit::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
 use ml_wit::inference::GraphExecutionContext;
+use ml_wit::{errors, graph, inference, tensor};
+use spin_core::async_trait;
+use spin_world::v2 as ml_wit;
+use std::path::PathBuf;
+use crate::imagenet_download::{imagenet_download, OpenvinoModel};
+use crate::imagenet_download::imagenet_check_models;    
 
-use tokio::sync::Mutex;
 use spin_core::wasmtime::component::Resource;
+use tokio::sync::Mutex;
 
 use openvino::{Layout, Precision, TensorDesc};
-
 
 #[derive(Debug)]
 pub struct GraphInternalData {
@@ -40,11 +40,90 @@ pub struct ErrorInternalData {
 
 #[derive(Default)]
 pub struct MLHostImpl {
+    pub state_dir: Option<PathBuf>,
     pub openvino: Option<openvino::Core>,
     pub graphs: table::Table<GraphInternalData>,
     pub executions: table::Table<GraphExecutionContextInternalData>,
     pub tensors: table::Table<TensorInternalData>,
     pub errors: table::Table<ErrorInternalData>,
+}
+
+
+impl MLHostImpl {
+    // Construct the context if none is present; this is done lazily (i.e.
+    // upon actually loading a model) because it may fail to find and load
+    // the OpenVINO libraries. The laziness limits the extent of the error
+    // only to wasi-nn users, not all WASI users.
+    fn load_openvino(&mut self) -> Result<(), anyhow::Error> {
+        if self.openvino.is_none() {
+            self.openvino.replace(openvino::Core::new(None)?);
+        }
+        Ok(())
+    }
+
+    fn loeaded_to_graph(&mut self, model: OpenvinoModel) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
+        let graph_internal_data = GraphInternalData{
+            xml: model.xml,
+            weights: model.weights,
+            target: ExecutionTarget::Gpu,
+        };
+        MLHostImpl::new_graph(&mut self.graphs, &mut self.errors, graph_internal_data) 
+    }
+
+    fn load_imagenet(
+        &mut self,
+    ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
+        if let Some(dir) = &self.state_dir {
+            match imagenet_check_models(dir) {
+                Ok(model) => { 
+                    return self.loeaded_to_graph(model);
+                }, 
+                Err(_) => {
+                    imagenet_download(dir)?;
+                    let model = imagenet_check_models(dir).map_err(|e| anyhow!("{:?}", e))?;
+                    return self.loeaded_to_graph(model);
+                }
+            };
+        } else {
+            Err(anyhow!("state_dir is not set, therefore there is no place to download models"))
+        }
+    }
+    fn new_error(
+        errors: &mut table::Table<ErrorInternalData>,
+        code: ErrorCode,
+        message: String,
+    ) -> Resource<errors::Error> {
+        errors
+            .push(ErrorInternalData { code, message })
+            .map(Resource::<errors::Error>::new_own)
+            .expect("Can't allocate error")
+    }
+
+    fn new_graph(
+        graphs: &mut table::Table<GraphInternalData>,
+        errors: &mut table::Table<ErrorInternalData>,
+        graph_internal_data: GraphInternalData,
+    ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
+        match graphs.push(graph_internal_data) {
+            Ok(graph_rep) => {
+                return Ok(Ok(Resource::<Graph>::new_own(graph_rep)));
+            }
+            Err(err) => {
+                match errors.push(ErrorInternalData {
+                    code: ErrorCode::RuntimeError,
+                    message: format!("{:?}", err),
+                }) {
+                    Ok(error_rep) => {
+                        return Ok(Err(Resource::<errors::Error>::new_own(error_rep)));
+                    }
+                    Err(err) => {
+                        return Err(anyhow!("Can't create internal error for {:?}", err));
+                    }
+                }
+            }
+        }
+    }
+
 }
 
 #[async_trait]
@@ -56,78 +135,62 @@ impl graph::HostGraph for MLHostImpl {
         Result<Resource<inference::GraphExecutionContext>, Resource<errors::Error>>,
         anyhow::Error,
     > {
-        // Construct the context if none is present; this is done lazily (i.e.
-        // upon actually loading a model) because it may fail to find and load
-        // the OpenVINO libraries. The laziness limits the extent of the error
-        // only to wasi-nn users, not all WASI users.
-        if self.openvino.is_none() {
-            self.openvino.replace(openvino::Core::new(None)?);
-        }
-        if self.openvino.is_some() {
-            if let Some(graph) = self.graphs.get(graph.rep()) {
-                let mut cnn_network = self
-                    .openvino
-                    .as_mut()
-                    .expect("")
-                    .read_network_from_buffer(&graph.xml, &graph.weights)?;
+        self.load_openvino()?;
+        if let Some(graph) = self.graphs.get(graph.rep()) {
+            let mut cnn_network = self
+                .openvino
+                .as_mut()
+                .expect("")
+                .read_network_from_buffer(&graph.xml, &graph.weights)?;
 
-                // Construct OpenVINO graph structures: `cnn_network` contains the graph
-                // structure, `exec_network` can perform inference.
-                //let core = self
-                //    .0
-                //    .as_mut()
-                //    .expect("openvino::Core was previously constructed");
-                //let mut cnn_network = core.read_network_from_buffer(&xml, &weights)?;
+            // Construct OpenVINO graph structures: `cnn_network` contains the graph
+            // structure, `exec_network` can perform inference.
+            //let core = self
+            //    .0
+            //    .as_mut()
+            //    .expect("openvino::Core was previously constructed");
+            //let mut cnn_network = core.read_network_from_buffer(&xml, &weights)?;
 
-                // TODO: this is a temporary workaround. We need a more elegant way to
-                // specify the layout in the long run. However, without this newer
-                // versions of OpenVINO will fail due to parameter mismatch.
-                for i in 0..cnn_network.get_inputs_len().unwrap() {
-                    let name = cnn_network.get_input_name(i)?;
-                    cnn_network.set_input_layout(&name, Layout::NHWC)?;
-                }
-
-                let mut exec_network = self
-                    .openvino
-                    .as_mut()
-                    .expect("")
-                    .load_network(&cnn_network, map_execution_target_to_string(graph.target))?;
-                let infer_request = exec_network
-                    .create_infer_request()
-                    .expect("Can't create InferRequest");
-                let graph_execution_context = GraphExecutionContextInternalData {
-                    cnn_network: cnn_network,
-                    executable_network: Mutex::new(exec_network),
-                    infer_request: infer_request,
-                };
-
-                match self
-                    .executions
-                    .push(graph_execution_context)
-                    .map(Resource::<inference::GraphExecutionContext>::new_own)
-                {
-                    Ok(res) => {
-                        return Ok(Ok(res));
-                    }
-                    Err(_) => {
-                        match self.errors.push(ErrorInternalData {
-                            code: ErrorCode::RuntimeError,
-                            message: "Can't create graph execution context".to_string(),
-                        }) {
-                            Ok(id) => {
-                                return Ok(Err(Resource::<errors::Error>::new_own(id)));
-                            }
-                            Err(_) => {
-                                return Err(anyhow!("Can't allocate error"));
-                            }
-                        }
-                    }
-                }
+            // TODO: this is a temporary workaround. We need a more elegant way to
+            // specify the layout in the long run. However, without this newer
+            // versions of OpenVINO will fail due to parameter mismatch.
+            for i in 0..cnn_network.get_inputs_len().unwrap() {
+                let name = cnn_network.get_input_name(i)?;
+                cnn_network.set_input_layout(&name, Layout::NHWC)?;
             }
+
+            let mut exec_network = self
+                .openvino
+                .as_mut()
+                .expect("")
+                .load_network(&cnn_network, map_execution_target_to_string(graph.target))?;
+            let infer_request = exec_network
+                .create_infer_request()
+                .expect("Can't create InferRequest");
+            let graph_execution_context = GraphExecutionContextInternalData {
+                cnn_network: cnn_network,
+                executable_network: Mutex::new(exec_network),
+                infer_request: infer_request,
+            };
+
+            let res = self
+                .executions
+                .push(graph_execution_context)
+                .map(Resource::<inference::GraphExecutionContext>::new_own);
+            let x = match res {
+                Ok(res) => Ok(res),
+                Err(_) => Err(MLHostImpl::new_error(
+                    &mut self.errors,
+                    ErrorCode::RuntimeError,
+                    "Can't create graph execution context".to_string(),
+                )),
+            };
+            Ok(x)
+        } else {
+            Err(anyhow!(
+                "[graph::HostGraph] fn init_execution_context -> Not implemented"
+            ))
         }
-        Err(anyhow!(
-            "[graph::HostGraph] fn init_execution_context -> Not implemented"
-        ))
     }
 
     fn drop(&mut self, graph: Resource<Graph>) -> Result<(), anyhow::Error> {
@@ -283,18 +346,8 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
             .cnn_network
             .get_input_name(index)
             .context(format!("Can't find input with name = {}", index))?;
-        let res = match execution_context.infer_request.set_blob(&input_name, &blob) {
-            Ok(res) => Ok(res),
-            Err(err) => {
-                Err(self.errors
-                .push(ErrorInternalData {
-                    code: ErrorCode::RuntimeError,
-                    message: format!("Inference error = {:?}", err.to_string()),
-                })
-                .map(Resource::<errors::Error>::new_own)
-                .map_err(|_| anyhow!("Can't allocate error"))?)
-            }
-        };
+        let res = execution_context.infer_request.set_blob(&input_name, &blob).map_err(|err| {
+            MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, format!("Inference error = {:?}", err.to_string())) });
         Ok(res)
     }
 
@@ -309,21 +362,20 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
                 "Can't find graph execution context with ID = {}",
                 graph_execution_context.rep()
             )))?;
-        match graph_execution.infer_request.infer() {
-            Ok(..) => Ok(Ok(())),
-            Err(err) => Ok(Err(self.new(
+        Ok(graph_execution.infer_request.infer().map_err(|err| {
+            MLHostImpl::new_error(
+                &mut self.errors,
                 ErrorCode::RuntimeError,
                 format!("Inference error = {:?}", err.to_string()),
-            ).await?)),
-        }
+            )
+        }))
     }
 
     async fn get_output(
         &mut self,
         graph_execution_context: Resource<GraphExecutionContext>,
         input_name: String,
-    ) -> Result<Result<Resource<tensor::Tensor>, Resource<errors::Error>>, anyhow::Error>
-    {
+    ) -> Result<Result<Resource<tensor::Tensor>, Resource<errors::Error>>, anyhow::Error> {
         let index = input_name
             .parse::<usize>()
             .context("Can't parse {} to usize for input_name")?;
@@ -360,31 +412,26 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
             tensor_type: map_precision_to_tensor_type(tensor_desc.precision()),
             tensor_data: buffer,
         };
-        match self
-            .tensors
-            .push(tensor)
-            .map(Resource::<tensor::Tensor>::new_own)
-        {
-            Ok(t) => {
-                return Ok(Ok(t));
-            }
-            Err(_) => {
-                Ok(Err(self.errors
+        Ok(
+            match self
+                .tensors
+                .push(tensor)
+                .map(Resource::<tensor::Tensor>::new_own)
+            {
+                Ok(t) => Ok(t),
+                Err(_) => Err(self
+                    .errors
                     .push(ErrorInternalData {
                         code: ErrorCode::RuntimeError,
                         message: format!("Can't create tensor for get_output"),
                     })
                     .map(Resource::<errors::Error>::new_own)
-                    .map_err(|_| anyhow!("Can't allocate error"))?
-                ))
-            }
-        }
+                    .map_err(|_| anyhow!("Can't allocate error"))?),
+            },
+        )
     }
 
-    fn drop(
-        &mut self,
-        execution: Resource<GraphExecutionContext>,
-    ) -> Result<(), anyhow::Error> {
+    fn drop(&mut self, execution: Resource<GraphExecutionContext>) -> Result<(), anyhow::Error> {
         let id = execution.rep();
         self.executions
             .remove(id)
@@ -416,34 +463,22 @@ impl graph::Host for MLHostImpl {
             weights: graph[1].clone(),
             target: target,
         };
-        match self.graphs.push(graph_internal_data) {
-            Ok(graph_rep) => {
-                return Ok(Ok(Resource::<Graph>::new_own(graph_rep)));
-            }
-            Err(err) => {
-                match self.errors.push(ErrorInternalData {
-                    code: ErrorCode::RuntimeError,
-                    message: format!("{:?}", err),
-                }) {
-                    Ok(error_rep) => {
-                        return Ok(Err(Resource::<errors::Error>::new_own(error_rep)));
-                    }
-                    Err(err) => {
-                        return Err(anyhow!("Can't create internal error for {:?}", err));
-                    }
-                }
-            }
-        }
+        MLHostImpl::new_graph(&mut self.graphs, &mut self.errors, graph_internal_data)
+
     }
 
     async fn load_by_name(
         &mut self,
-        _graph: String,
+        model_name: String,
     ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
-        Err(anyhow!("[graph::Host] fn load_by_name -> Not implemented"))
+        if model_name == "imagenet" {
+            return self.load_imagenet();
+        }
+        Err(anyhow!(
+            "[graph::Host] fn load_by_name -> model not supported "
+        ))
     }
-
-}
+    }
 
 impl inference::Host for MLHostImpl {}
 impl tensor::Host for MLHostImpl {}

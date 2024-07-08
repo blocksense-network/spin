@@ -15,4 +15,8 @@ spin-world = { path = "../world" }
 table = { path = "../table" }
 
 openvino = { version = "0.6.0", features = ["runtime-linking",] }
+curl = { version = "^0.4", features = ["rustls"] }
+sha1 = "^0.10"
+hex-literal = "^0.4"
+
 tracing = { workspace = true }

@@ -34,18 +34,20 @@ struct MLContext {
 
 impl MLContext {
     fn inc(&mut self) -> i32 {
-        println!("inc(mut self) pointer 1 => {:x}", self as *mut MLContext as u64);
+        println!(
+            "inc(mut self) pointer 1 => {:x}",
+            self as *mut MLContext as u64
+        );
         //println!("INC!!! {:?}", *self);
         self.v = self.v + 1;
         self.v
     }
-} 
+}
 
-static ML_CONTEXT: Lazy<Mutex<MLContext>> = Lazy::new(|| { 
+static ML_CONTEXT: Lazy<Mutex<MLContext>> = Lazy::new(|| {
     println!("New lazy !!");
-    Mutex::new(MLContext{v: 0})
-    }
-);
+    Mutex::new(MLContext { v: 0 })
+});
 
 /*fn main() {
     let base_url = "https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/"; //images/0.jpg
@@ -120,19 +122,23 @@ fn hashmap() -> &'static HashMap<u32, &'static str> {
         m
     })
 }
- 
+
 /// A simple Spin HTTP component.
 #[http_component]
 async fn imagenet_handler(req: http::Request<()>) -> anyhow::Result<impl IntoResponse> {
-    let mut ml_context = ML_CONTEXT.lock().await;//.expect("ML context is not initialized");
-    println!("v = {}" , &ml_context.v);
+    let mut ml_context = ML_CONTEXT.lock().await; //.expect("ML context is not initialized");
+    println!("v = {}", &ml_context.v);
     println!("h = {:?}", hashmap());
-  //  do_a_call();
-    //let _x = load_by_name("imagenet").expect("msg");
+    //  do_a_call();
+    let x = load_by_name("imagenet"); //.expect("msg");
     match req.method() {
         &Method::POST => {
-            match imagenet_openvino_test(".".to_string(), "GPU".to_string(), "image0.jpg".to_string()) {
-                Ok(_) => {Ok(Response::new(200, "Hello, world from imagenet demo !"))}
+            match imagenet_openvino_test(
+                ".".to_string(),
+                "GPU".to_string(),
+                "image0.jpg".to_string(),
+            ) {
+                Ok(_) => Ok(Response::new(200, "Hello, world from imagenet demo !")),
                 Err(e) => {
                     let message = e.to_string();
                     Ok(Response::new(200, message))
@@ -140,11 +146,12 @@ async fn imagenet_handler(req: http::Request<()>) -> anyhow::Result<impl IntoRes
             }
         }
         _ => {
-    
-            let v = ml_context.inc();        
-    //        let x = array().lock().unwrap().len();
-            Ok(Response::new(200, format!("Loading please wait! v = {}", v)))
+            let v = ml_context.inc();
+            //        let x = array().lock().unwrap().len();
+            Ok(Response::new(
+                200,
+                format!("Loading please wait! v = {}, x = {:?}", v, x),
+            ))
         }
-    }   
-
+    }
 }

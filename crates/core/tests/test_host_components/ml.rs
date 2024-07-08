@@ -7,8 +7,8 @@ pub mod ml {
     use test::test as ml_wit;
 
     use ml_wit::{errors, graph, inference, tensor};
-      
-    use ml_wit::errors::{HostError, ErrorCode};
+
+    use ml_wit::errors::{ErrorCode, HostError};
     use ml_wit::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
     use ml_wit::inference::GraphExecutionContext;
 

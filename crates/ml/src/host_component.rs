@@ -1,11 +1,15 @@
-use spin_core::HostComponent;
+use std::path::PathBuf;
+
 use spin_app::DynamicHostComponent;
+use spin_core::HostComponent;
 use spin_world::v2 as ml_wit;
 
 use crate::host_impl::MLHostImpl;
 
 #[derive(Clone)]
-pub struct MLHostComponent;
+pub struct MLHostComponent {
+    pub state_dir: Option<PathBuf>,
+}
 
 impl HostComponent for MLHostComponent {
     type Data = MLHostImpl;
@@ -22,6 +26,7 @@ impl HostComponent for MLHostComponent {
 
     fn build_data(&self) -> Self::Data {
         MLHostImpl {
+            state_dir: self.state_dir.clone(),
             ..Default::default()
         }
     }

@@ -206,7 +206,12 @@ impl<Executor: TriggerExecutor> TriggerExecutorBuilder<Executor> {
                         runtime_config.variables_providers(),
                     ),
                 )?;
-                self.loader.add_dynamic_host_component(&mut builder, spin_ml::host_component::MLHostComponent {})?;
+                self.loader.add_dynamic_host_component(
+                    &mut builder,
+                    spin_ml::host_component::MLHostComponent {
+                        state_dir: runtime_config.state_dir(),
+                    },
+                )?;
             }
 
             Executor::configure_engine(&mut builder)?;
