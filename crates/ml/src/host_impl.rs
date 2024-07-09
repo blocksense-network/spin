@@ -1,13 +1,13 @@
+use crate::imagenet_download::imagenet_check_models;
+use crate::imagenet_download::{imagenet_download, OpenvinoModel};
 use anyhow::{anyhow, Context};
-use ml_wit::errors::{ErrorCode, HostError};
+use ml_wit::errors::ErrorCode;
 use ml_wit::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
 use ml_wit::inference::GraphExecutionContext;
 use ml_wit::{errors, graph, inference, tensor};
 use spin_core::async_trait;
 use spin_world::v2 as ml_wit;
 use std::path::PathBuf;
-use crate::imagenet_download::{imagenet_download, OpenvinoModel};
-use crate::imagenet_download::imagenet_check_models;    
 
 use spin_core::wasmtime::component::Resource;
 use tokio::sync::Mutex;
@@ -48,7 +48,6 @@ pub struct MLHostImpl {
     pub errors: table::Table<ErrorInternalData>,
 }
 
-
 impl MLHostImpl {
     // Construct the context if none is present; this is done lazily (i.e.
     // upon actually loading a model) because it may fail to find and load
@@ -61,13 +60,16 @@ impl MLHostImpl {
         Ok(())
     }
 
-    fn loeaded_to_graph(&mut self, model: OpenvinoModel) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
-        let graph_internal_data = GraphInternalData{
+    fn loeaded_to_graph(
+        &mut self,
+        model: OpenvinoModel,
+    ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
+        let graph_internal_data = GraphInternalData {
             xml: model.xml,
             weights: model.weights,
             target: ExecutionTarget::Gpu,
         };
-        MLHostImpl::new_graph(&mut self.graphs, &mut self.errors, graph_internal_data) 
+        MLHostImpl::new_graph(&mut self.graphs, &mut self.errors, graph_internal_data)
     }
 
     fn load_imagenet(
@@ -75,17 +77,17 @@ impl MLHostImpl {
     ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
         if let Some(dir) = &self.state_dir {
             match imagenet_check_models(dir) {
-                Ok(model) => { 
-                    return self.loeaded_to_graph(model);
-                }, 
+                Ok(model) => self.loeaded_to_graph(model),
                 Err(_) => {
                     imagenet_download(dir)?;
                     let model = imagenet_check_models(dir).map_err(|e| anyhow!("{:?}", e))?;
-                    return self.loeaded_to_graph(model);
+                    self.loeaded_to_graph(model)
                 }
-            };
+            }
         } else {
-            Err(anyhow!("state_dir is not set, therefore there is no place to download models"))
+            Err(anyhow!(
+                "state_dir is not set, therefore there is no place to download models"
+            ))
         }
     }
     fn new_error(
@@ -104,26 +106,15 @@ impl MLHostImpl {
         errors: &mut table::Table<ErrorInternalData>,
         graph_internal_data: GraphInternalData,
     ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
-        match graphs.push(graph_internal_data) {
-            Ok(graph_rep) => {
-                return Ok(Ok(Resource::<Graph>::new_own(graph_rep)));
-            }
-            Err(err) => {
-                match errors.push(ErrorInternalData {
-                    code: ErrorCode::RuntimeError,
-                    message: format!("{:?}", err),
-                }) {
-                    Ok(error_rep) => {
-                        return Ok(Err(Resource::<errors::Error>::new_own(error_rep)));
-                    }
-                    Err(err) => {
-                        return Err(anyhow!("Can't create internal error for {:?}", err));
-                    }
-                }
-            }
-        }
+        Ok(match graphs.push(graph_internal_data) {
+            Ok(graph_rep) => Ok(Resource::<Graph>::new_own(graph_rep)),
+            Err(err) => Err(MLHostImpl::new_error(
+                errors,
+                ErrorCode::RuntimeError,
+                format!("{:?}", err),
+            )),
+        })
     }
-
 }
 
 #[async_trait]
@@ -168,9 +159,9 @@ impl graph::HostGraph for MLHostImpl {
                 .create_infer_request()
                 .expect("Can't create InferRequest");
             let graph_execution_context = GraphExecutionContextInternalData {
-                cnn_network: cnn_network,
+                cnn_network,
                 executable_network: Mutex::new(exec_network),
-                infer_request: infer_request,
+                infer_request,
             };
 
             let res = self
@@ -208,13 +199,7 @@ impl errors::HostError for MLHostImpl {
         code: errors::ErrorCode,
         data: String,
     ) -> Result<Resource<errors::Error>, anyhow::Error> {
-        self.errors
-            .push(ErrorInternalData {
-                code: code,
-                message: data,
-            })
-            .map(Resource::<errors::Error>::new_own)
-            .map_err(|_| anyhow!("Can't allocate error"))
+        Ok(MLHostImpl::new_error(&mut self.errors, code, data))
     }
 
     fn drop(&mut self, error: Resource<errors::Error>) -> Result<(), anyhow::Error> {
@@ -257,9 +242,9 @@ impl tensor::HostTensor for MLHostImpl {
         tensor_data: tensor::TensorData,
     ) -> Result<Resource<tensor::Tensor>, anyhow::Error> {
         let tensor = TensorInternalData {
-            tensor_dimensions: tensor_dimensions,
-            tensor_type: tensor_type,
-            tensor_data: tensor_data,
+            tensor_dimensions,
+            tensor_type,
+            tensor_data,
         };
         self.tensors
             .push(tensor)
@@ -346,8 +331,16 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
             .cnn_network
             .get_input_name(index)
             .context(format!("Can't find input with name = {}", index))?;
-        let res = execution_context.infer_request.set_blob(&input_name, &blob).map_err(|err| {
-            MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, format!("Inference error = {:?}", err.to_string())) });
+        let res = execution_context
+            .infer_request
+            .set_blob(&input_name, &blob)
+            .map_err(|err| {
+                MLHostImpl::new_error(
+                    &mut self.errors,
+                    ErrorCode::RuntimeError,
+                    format!("Inference error = {:?}", err.to_string()),
+                )
+            });
         Ok(res)
     }
 
@@ -395,12 +388,7 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
             .get_blob(&output_name)
             .context("Can't get blob for output name = {output_name}")?;
         let tensor_desc = blob.tensor_desc().context("Can't get blob description")?;
-        let buffer = blob
-            .buffer()
-            .context("Can't get blob buffer")?
-            .iter()
-            .map(|&d| d as u8)
-            .collect::<Vec<_>>();
+        let buffer = blob.buffer().context("Can't get blob buffer")?.to_vec();
         let tensor_dimensions = tensor_desc
             .dims()
             .iter()
@@ -408,7 +396,7 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
             .collect::<Vec<_>>();
 
         let tensor = TensorInternalData {
-            tensor_dimensions: tensor_dimensions,
+            tensor_dimensions,
             tensor_type: map_precision_to_tensor_type(tensor_desc.precision()),
             tensor_data: buffer,
         };
@@ -423,7 +411,7 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
                     .errors
                     .push(ErrorInternalData {
                         code: ErrorCode::RuntimeError,
-                        message: format!("Can't create tensor for get_output"),
+                        message: "Can't create tensor for get_output".to_string(),
                     })
                     .map(Resource::<errors::Error>::new_own)
                     .map_err(|_| anyhow!("Can't allocate error"))?),
@@ -461,10 +449,9 @@ impl graph::Host for MLHostImpl {
         let graph_internal_data = GraphInternalData {
             xml: graph[0].clone(),
             weights: graph[1].clone(),
-            target: target,
+            target,
         };
         MLHostImpl::new_graph(&mut self.graphs, &mut self.errors, graph_internal_data)
-
     }
 
     async fn load_by_name(
@@ -478,7 +465,7 @@ impl graph::Host for MLHostImpl {
             "[graph::Host] fn load_by_name -> model not supported "
         ))
     }
-    }
+}
 
 impl inference::Host for MLHostImpl {}
 impl tensor::Host for MLHostImpl {}
