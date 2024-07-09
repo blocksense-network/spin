@@ -5,7 +5,12 @@ use std::{
 };
 
 mod test_host_components;
+
+#[cfg(not(feature = "openvino"))]
+use crate::test_host_components::empty_ml::ml::MLHostComponent;
+#[cfg(feature = "openvino")]
 use crate::test_host_components::ml::ml::MLHostComponent;
+
 use crate::test_host_components::multiplier::{Multiplier, MultiplierHostComponent};
 
 use anyhow::Context;
@@ -58,7 +63,6 @@ async fn test_read_only_preopened_dir_write_fails() {
         .expect("trap error was not an I32Exit");
     assert_eq!(trap.0, 1);
 }
-
 #[tokio::test(flavor = "multi_thread")]
 async fn test_read_write_preopened_dir() {
     let filename = "test_file";
@@ -161,6 +165,7 @@ async fn test_host_component_data_update() {
     assert_eq!(stdout, "500");
 }
 
+#[cfg(feature = "openvino")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_host_component_imagenet_openvino_cpu() {
     let engine = test_engine();
@@ -186,6 +191,8 @@ async fn test_host_component_imagenet_openvino_cpu() {
     assert_eq!(stdout, "0.47 -> Eskimo dog, husky\n0.37 -> Siberian husky\n0.01 -> malamute, malemute, Alaskan malamute");
 }
 
+#[cfg(feature = "openvino")]
+#[cfg(feature = "has_gpu")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_host_component_imagenet_openvino_gpu() {
     let engine = test_engine();
@@ -230,6 +237,7 @@ fn test_config() -> Config {
 fn test_engine() -> Engine<()> {
     let mut builder = Engine::builder(&test_config()).unwrap();
     builder.add_host_component(MultiplierHostComponent).unwrap();
+
     builder.add_host_component(MLHostComponent).unwrap();
 
     builder
