@@ -648,8 +648,6 @@ fn trigger_command_for_resolved_app_source(
 
 #[cfg(test)]
 mod test {
-    use crate::commands::up::app_source::AppSource;
-
     use super::*;
 
     fn repo_path(path: &str) -> String {

@@ -442,14 +442,12 @@ impl<Executor: TriggerExecutor> TriggerAppEngine<Executor> {
 /// TriggerHooks allows a Spin environment to hook into a TriggerAppEngine's
 /// configuration and execution processes.
 pub trait TriggerHooks: Send + Sync {
-    #![allow(unused_variables)]
-
     /// Called once, immediately after an App is loaded.
     fn app_loaded(
         &mut self,
-        app: &App,
-        runtime_config: &RuntimeConfig,
-        resolver: &std::sync::Arc<spin_expressions::PreparedResolver>,
+        _app: &App,
+        _runtime_config: &RuntimeConfig,
+        _resolver: &std::sync::Arc<spin_expressions::PreparedResolver>,
     ) -> Result<()> {
         Ok(())
     }
@@ -459,8 +457,8 @@ pub trait TriggerHooks: Send + Sync {
     /// environment of the instance to be executed.
     fn component_store_builder(
         &self,
-        component: &AppComponent,
-        store_builder: &mut StoreBuilder,
+        _component: &AppComponent,
+        _store_builder: &mut StoreBuilder,
     ) -> Result<()> {
         Ok(())
     }
