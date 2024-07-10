@@ -1,9 +1,7 @@
 use crate::imagenet_classes;
-use crate::ml::fermyon::spin::{
-    graph::{self, GraphExecutionContext},
-    inference, tensor,
-};
-use image2tensor::convert_image_to_tensor_bytes;
+use crate::ml::fermyon::spin::inference::GraphExecutionContext;
+use crate::ml::fermyon::spin::{graph, inference, tensor};
+use image2tensor::convert_image_bytes_to_tensor_bytes;
 use std::{path::Path, task::Context};
 
 pub fn elapsed_to_string(fn_name: &str, elapsed: u128) -> String {
@@ -95,15 +93,14 @@ pub fn initialize_imagenet(
     Ok(context)
 }
 
-pub fn imagenet_openvino_test(
-    path_as_string: String,
-    target_as_string: String,
-    image_file: String,
+pub fn imagenet_infer(
+    context: &GraphExecutionContext,
+    image_file_data: &[u8],
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let context = initialize_imagenet(path_as_string, target_as_string).unwrap();
     let tensor_dimensions: Vec<u32> = vec![1, 3, 224, 224];
-    let tensor_data = convert_image_to_tensor_bytes(
-        &image_file,
+
+    let tensor_data = convert_image_bytes_to_tensor_bytes(
+        image_file_data,
         tensor_dimensions[2],
         tensor_dimensions[3],
         image2tensor::TensorType::F32,

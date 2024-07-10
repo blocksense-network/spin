@@ -13,6 +13,7 @@ component = "hello"
 [component.hello]
 source = "target/wasm32-wasi/release/http_rust_imagenet.wasm"
 description = "A simple component that returns hello."
+files = [{ source = ".spin", destination = "/" }]
 [component.hello.build]
 command = "cargo build --target wasm32-wasi --release"
 watch = ["src/**/*.rs", "Cargo.toml"]
