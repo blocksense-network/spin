@@ -1,4 +1,4 @@
-use http::Method;
+use http::{HeaderValue, Method};
 use ml::fermyon::spin::graph::load_by_name;
 use spin_sdk::http::{IntoResponse, Response};
 use spin_sdk::http_component;
@@ -12,39 +12,51 @@ mod ml {
 
 mod imagenet;
 mod imagenet_classes;
+mod file_server;
 use crate::imagenet::imagenet_infer;
 
-use image2tensor::convert_image_bytes_to_tensor_bytes;
 
-use std::borrow::BorrowMut;
-use std::env;
-use std::fs;
-use std::path::PathBuf;
 
-use std::io::Write;
-//use std::sync::{Mutex, OnceLock};
-use tokio::sync::Mutex;
+use std::io::Read;
 
-use once_cell::sync::Lazy;
-
-use spin_sdk::http::{Body, Request, ResponseBuilder, StatusCode};
-use std::io::Bytes;
 
 use crate::ml::fermyon::spin::graph;
+use http::HeaderMap;
+use multipart::server::Multipart;
+
+fn parse_content_type(headers: &HeaderMap<HeaderValue>) -> Option<mime::Mime> {
+    headers
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|val| val.to_str().ok())
+        .and_then(|val| val.parse::<mime::Mime>().ok())
+}
 
 /// A simple Spin HTTP component.
 #[http_component]
 async fn imagenet_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<impl IntoResponse> {
+    println!("METHOD = {:?}", &req.method());
+    println!("URI = {:?}", req.uri());
     let imagenet_graph = load_by_name("imagenet").unwrap();
+
     let context = graph::Graph::init_execution_context(&imagenet_graph).unwrap();
     match req.method() {
         &Method::POST => {
-            //println!("req.body = {:?}", req.body());
 
-            let image = req.body();
+            let (parts, body) = req.into_parts();
+            let x = parse_content_type(&parts.headers).unwrap();
+            let boundary = x.get_param("boundary").unwrap();
+            let mut mp = Multipart::with_body(&*body, boundary.as_str());
+       
+            while let Some(mut field) = mp.read_entry().unwrap() {
+                //while field.data.read_to_endhas_data_left().expect("Bace Bace") {
+                    let mut file_content: Vec<u8> = vec![];
+                    //let data = field.data.fill_buf().unwrap();
+                    let bytes_read = field.data.read_to_end(&mut file_content).unwrap();
+                    //let s = String::from_utf8_lossy(data);
+                    println!("headers: {:?}, bytes_read = {}", field.headers, bytes_read);
+                    imagenet_infer(&context, &file_content).unwrap();
 
-            println!("body = {:?}", String::from_utf8_lossy(image));
-            imagenet_infer(&context, image).unwrap();
+            }
         }
         _ => {}
     }
