@@ -2,7 +2,7 @@ use crate::imagenet_classes;
 use crate::ml::fermyon::spin::inference::GraphExecutionContext;
 use crate::ml::fermyon::spin::{graph, inference, tensor};
 use image2tensor::convert_image_bytes_to_tensor_bytes;
-use std::{path::Path, task::Context};
+use std::path::Path;
 
 pub fn elapsed_to_string(fn_name: &str, elapsed: u128) -> String {
     if elapsed < 1000 {
@@ -17,7 +17,7 @@ pub fn elapsed_to_string(fn_name: &str, elapsed: u128) -> String {
         )
     }
 }
-
+/*
 pub fn bytes_to_string(b: usize) -> String {
     if b < 1024 {
         format!("{} Bytes", b)
@@ -93,10 +93,20 @@ pub fn initialize_imagenet(
     Ok(context)
 }
 
+*/
+
+#[derive(Debug)]
+pub struct DescriptiveInferenceResult {
+    pub weight: f32,
+    pub class: String,
+    pub inference_time_in_ns: u128,
+
+}
+
 pub fn imagenet_infer(
     context: &GraphExecutionContext,
     image_file_data: &[u8],
-) -> std::result::Result<(), Box<dyn std::error::Error>> {
+) -> std::result::Result<Vec<DescriptiveInferenceResult>, Box<dyn std::error::Error>> {
     let tensor_dimensions: Vec<u32> = vec![1, 3, 224, 224];
 
     let tensor_data = convert_image_bytes_to_tensor_bytes(
@@ -123,25 +133,13 @@ pub fn imagenet_infer(
     };
     let input_name = "0";
     {
-        let start_for_elapsed_macro = std::time::Instant::now();
-        let set_input_result =
-            inference::GraphExecutionContext::set_input(&context, input_name, tensor_id).unwrap();
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
-        eprintln!(
-            "Input set with ID: {:?} {}",
-            set_input_result,
-            elapsed_to_string("GraphExecutionContext::set_input", elapsed)
-        );
+        inference::GraphExecutionContext::set_input(&context, input_name, tensor_id).unwrap();
     }
-    {
+    let inference_time_in_ns = {
         let start_for_elapsed_macro = std::time::Instant::now();
         let _infered_result = inference::GraphExecutionContext::compute(&context).unwrap();
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
-        eprintln!(
-            "Executed graph inference. {}",
-            elapsed_to_string("GraphExecutionContext::compute", elapsed)
-        );
-    }
+        start_for_elapsed_macro.elapsed().as_nanos()
+    };
     let output_result_id = {
         let start_for_elapsed_macro = std::time::Instant::now();
         let output_result_id =
@@ -173,20 +171,27 @@ pub fn imagenet_infer(
         let output_vec_f32 =
             unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const f32, 1001) };
         let results = sort_results(&output_vec_f32);
+        let mut res : Vec<DescriptiveInferenceResult> = vec![];
         for i in 0..3 {
             println!(
                 "{:.2} -> {}",
                 results[i].weight,
                 imagenet_classes::IMAGENET_CLASSES[results[i].index],
             );
+            res.push(DescriptiveInferenceResult {
+                weight: results[i].weight, 
+                class: imagenet_classes::IMAGENET_CLASSES[results[i].index].to_string(),
+                inference_time_in_ns,
+            })
         }
+        return Ok(res);
     } else {
         eprintln!(
             "Output not as expected, output = {:?} {:?}",
             &output_dimensions, &output_type
         );
     }
-    Ok(())
+    Err("Unknown error".into())
 }
 
 // Sort the buffer of probabilities. The graph places the match probability for each class at the
