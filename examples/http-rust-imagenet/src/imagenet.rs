@@ -100,7 +100,6 @@ pub struct DescriptiveInferenceResult {
     pub weight: f32,
     pub class: String,
     pub inference_time_in_ns: u128,
-
 }
 
 pub fn imagenet_infer(
@@ -171,7 +170,7 @@ pub fn imagenet_infer(
         let output_vec_f32 =
             unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const f32, 1001) };
         let results = sort_results(&output_vec_f32);
-        let mut res : Vec<DescriptiveInferenceResult> = vec![];
+        let mut res: Vec<DescriptiveInferenceResult> = vec![];
         for i in 0..3 {
             println!(
                 "{:.2} -> {}",
@@ -179,7 +178,7 @@ pub fn imagenet_infer(
                 imagenet_classes::IMAGENET_CLASSES[results[i].index],
             );
             res.push(DescriptiveInferenceResult {
-                weight: results[i].weight, 
+                weight: results[i].weight,
                 class: imagenet_classes::IMAGENET_CLASSES[results[i].index].to_string(),
                 inference_time_in_ns,
             })
