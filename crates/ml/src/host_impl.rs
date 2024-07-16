@@ -63,25 +63,27 @@ impl MLHostImpl {
     fn loeaded_to_graph(
         &mut self,
         model: OpenvinoModel,
+        target: ExecutionTarget,
     ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
         let graph_internal_data = GraphInternalData {
             xml: model.xml,
             weights: model.weights,
-            target: ExecutionTarget::Gpu,
+            target,
         };
         MLHostImpl::new_graph(&mut self.graphs, &mut self.errors, graph_internal_data)
     }
 
     fn load_imagenet(
         &mut self,
+        target: ExecutionTarget,
     ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
         if let Some(dir) = &self.state_dir {
             match imagenet_check_models(dir) {
-                Ok(model) => self.loeaded_to_graph(model),
+                Ok(model) => self.loeaded_to_graph(model, target),
                 Err(_) => {
                     imagenet_download(dir)?;
                     let model = imagenet_check_models(dir).map_err(|e| anyhow!("{:?}", e))?;
-                    self.loeaded_to_graph(model)
+                    self.loeaded_to_graph(model, target)
                 }
             }
         } else {
@@ -459,7 +461,16 @@ impl graph::Host for MLHostImpl {
         model_name: String,
     ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
         if model_name == "imagenet" {
-            return self.load_imagenet();
+            return self.load_imagenet(ExecutionTarget::Gpu);
+        }
+        let parts: Vec<_> = model_name.split(':').map(|x| x.to_string()).collect();
+        if parts.len() == 2 {
+            if let Some(target) = map_string_to_execution_target(&parts[1]) {
+                let model_name = &parts[0];
+                if model_name == "imagenet" {
+                    return self.load_imagenet(target);
+                }
+            }
         }
         Err(anyhow!(
             "[graph::Host] fn load_by_name -> model not supported "
@@ -479,6 +490,17 @@ fn map_execution_target_to_string(target: ExecutionTarget) -> &'static str {
         ExecutionTarget::Tpu => {
             unimplemented!("OpenVINO does not support TPU execution targets")
         }
+    }
+}
+
+/// Return the execution target string expected by OpenVINO from the
+/// `ExecutionTarget` enum provided by wasi-nn.
+fn map_string_to_execution_target(target: &str) -> Option<ExecutionTarget> {
+    match target {
+        "CPU" => Some(ExecutionTarget::Cpu),
+        "GPU" => Some(ExecutionTarget::Gpu),
+        "TPU" => Some(ExecutionTarget::Tpu),
+        _ => None,
     }
 }
 
