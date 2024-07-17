@@ -27,6 +27,7 @@ impl HostComponent for MLHostComponent {
     fn build_data(&self) -> Self::Data {
         MLHostImpl {
             state_dir: self.state_dir.clone(),
+            openvino: openvino::Core::new(None).ok(),
             ..Default::default()
         }
     }

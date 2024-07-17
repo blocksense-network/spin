@@ -49,16 +49,6 @@ pub struct MLHostImpl {
 }
 
 impl MLHostImpl {
-    // Construct the context if none is present; this is done lazily (i.e.
-    // upon actually loading a model) because it may fail to find and load
-    // the OpenVINO libraries. The laziness limits the extent of the error
-    // only to wasi-nn users, not all WASI users.
-    fn load_openvino(&mut self) -> Result<(), anyhow::Error> {
-        if self.openvino.is_none() {
-            self.openvino.replace(openvino::Core::new(None)?);
-        }
-        Ok(())
-    }
 
     fn loeaded_to_graph(
         &mut self,
@@ -161,7 +151,6 @@ impl graph::HostGraph for MLHostImpl {
         Result<Resource<inference::GraphExecutionContext>, Resource<errors::Error>>,
         anyhow::Error,
     > {
-        self.load_openvino()?;
         if let Some(graph) = self.graphs.get(graph.rep()) {
             Ok(
                 match MLHostImpl::new_execution_context(self.openvino.as_mut().expect(""), graph) {
