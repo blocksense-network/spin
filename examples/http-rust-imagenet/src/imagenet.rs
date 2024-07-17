@@ -1,8 +1,7 @@
 use crate::imagenet_classes;
 use crate::ml::fermyon::spin::inference::GraphExecutionContext;
-use crate::ml::fermyon::spin::{graph, inference, tensor};
+use crate::ml::fermyon::spin::{inference, tensor};
 use image2tensor::convert_image_bytes_to_tensor_bytes;
-use std::path::Path;
 
 pub fn elapsed_to_string(fn_name: &str, elapsed: u128) -> String {
     if elapsed < 1000 {
@@ -17,83 +16,7 @@ pub fn elapsed_to_string(fn_name: &str, elapsed: u128) -> String {
         )
     }
 }
-/*
-pub fn bytes_to_string(b: usize) -> String {
-    if b < 1024 {
-        format!("{} Bytes", b)
-    } else if b < 1024 * 1024 {
-        format!("{:.2} kB", b as f64 / 1024.0)
-    } else {
-        format!("{:.2} MB", b as f64 / 1024.0 / 1024.0)
-    }
-}
 
-/// Return the execution target type from string
-fn map_string_to_execution_target(target: &str) -> Result<graph::ExecutionTarget, String> {
-    match target {
-        "CPU" => Ok(graph::ExecutionTarget::Cpu),
-        "GPU" => Ok(graph::ExecutionTarget::Gpu),
-        "TPU" => Ok(graph::ExecutionTarget::Tpu),
-        _ => Err(format!("Unknown execution targer = {}", target)),
-    }
-}
-
-pub fn initialize_imagenet(
-    path_as_string: String,
-    target_as_string: String,
-) -> Result<GraphExecutionContext, Box<dyn std::error::Error>> {
-    let path = Path::new(&path_as_string);
-    let target = map_string_to_execution_target(&target_as_string)?;
-    let model = {
-        let start_for_elapsed_macro = std::time::Instant::now();
-        let model: Vec<u8> = std::fs::read(&path.join("model.xml"))?;
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
-        eprintln!(
-            "Loaded model from xml {} {}",
-            bytes_to_string(model.len()),
-            elapsed_to_string("fs::read", elapsed)
-        );
-        model
-    };
-    let weights = {
-        let start_for_elapsed_macro = std::time::Instant::now();
-        let weights = std::fs::read(&path.join("model.bin"))?;
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
-        eprintln!(
-            "Loaded weigths {} {}",
-            bytes_to_string(weights.len()),
-            elapsed_to_string("fs::read", elapsed)
-        );
-        weights
-    };
-    let imagenet_graph = {
-        let start_for_elapsed_macro = std::time::Instant::now();
-        let imagenet_graph =
-            graph::load(&[model, weights], graph::GraphEncoding::Openvino, target).unwrap();
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
-        eprintln!("---- {:?} ----", target);
-        eprintln!(
-            "Loaded graph with ID: {:?} {}",
-            imagenet_graph,
-            elapsed_to_string("graph::load", elapsed)
-        );
-        imagenet_graph
-    };
-    let context = {
-        let start_for_elapsed_macro = std::time::Instant::now();
-        let context = graph::Graph::init_execution_context(&imagenet_graph).unwrap();
-        let elapsed = start_for_elapsed_macro.elapsed().as_nanos();
-        eprintln!(
-            "Created context with ID: {:?} {}",
-            context,
-            elapsed_to_string("Graph::init_execution_context", elapsed)
-        );
-        context
-    };
-    Ok(context)
-}
-
-*/
 
 #[derive(Debug)]
 pub struct DescriptiveInferenceResult {

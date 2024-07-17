@@ -1,8 +1,11 @@
 use anyhow::Ok;
-use http::uri::Port;
-use http::{uri, HeaderValue, Method};
+use http::{HeaderValue, Method, HeaderMap};
+use multipart::server::Multipart;
+use std::io::Read;
+
 use ml::fermyon::spin::graph::load_by_name;
-use spin_sdk::http::conversions::TryIntoBody;
+
+
 use spin_sdk::http::{IntoResponse, Response};
 use spin_sdk::http_component;
 use spin_sdk::key_value::Store;
@@ -14,19 +17,14 @@ mod ml {
     });
 }
 
-mod file_server;
+
 mod imagenet;
 mod imagenet_classes;
-use crate::imagenet::imagenet_infer;
 
-use std::io::Read;
-use std::path::Path;
-use std::{any, fs, path};
 
 use crate::ml::fermyon::spin::graph;
-use http::HeaderMap;
-use http::Uri;
-use multipart::server::Multipart;
+use crate::imagenet::imagenet_infer;
+use crate::imagenet::elapsed_to_string;
 
 fn parse_content_type(headers: &HeaderMap<HeaderValue>) -> Option<mime::Mime> {
     headers
@@ -39,7 +37,6 @@ fn store_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<Vec<u8>> {
     let path = req.uri().path();
     let path_parts: Vec<_> = path.split('/').map(|x| x.to_string()).collect();
     if path_parts.len() > 2 {
-        //println!("search in store = {}", &path_parts[2]);
         let store = Store::open_default()?;
         let key = path_parts[2].clone();
         match store.get_json::<Vec<u8>>(key)? {
@@ -106,13 +103,17 @@ fn imagenet_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
                                         </tr>
                                         </thead>"#,
                                     );
-                                    for x in res {
+                                    for x in &res {
                                         b.push_str(&format!(
                                             "<tr><td>{}</td> <td>{:.2}</td></tr>",
-                                            x.class, x.weight
+                                            x.class, x.weight,
                                         ));
                                     }
+
+                                    let caption = elapsed_to_string("Inference time", res.first().unwrap().inference_time_in_ns);
+                                    b.push_str(format!("<caption>{}</caption>", caption).as_str());
                                     b.push_str("</table>");
+
                                     b.to_owned()
                                 }
                                 Err(e) => e.to_string(),

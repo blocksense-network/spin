@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use spin_core::wasmtime::component::Resource;
 use tokio::sync::Mutex;
 
-use openvino::{Layout, Precision, TensorDesc};
+use openvino::{Core, Layout, Precision, TensorDesc};
 
 #[derive(Debug)]
 pub struct GraphInternalData {
@@ -117,6 +117,39 @@ impl MLHostImpl {
             )),
         })
     }
+
+    fn new_execution_context(
+        openvino: &mut Core,
+        graph: &GraphInternalData,
+    ) -> Result<GraphExecutionContextInternalData, String> {
+        let mut cnn_network = openvino
+            .read_network_from_buffer(&graph.xml, &graph.weights)
+            .map_err(|e| format!("Can't create graph execution context, err=r {e:?}"))?;
+        for i in 0..cnn_network.get_inputs_len().unwrap() {
+            let name = cnn_network.get_input_name(i).map_err(|e| e.to_string())?;
+            cnn_network
+                .set_input_layout(&name, Layout::NHWC)
+                .map_err(|e| e.to_string())?;
+        }
+
+        let mut exec_network: openvino::ExecutableNetwork = openvino
+            .load_network(&cnn_network, map_execution_target_to_string(graph.target))
+            .map_err(|e| {
+                format!(
+                    "Can't create graph execution context for target {:?}, error {e:?}",
+                    graph.target
+                )
+            })?;
+        let infer_request = exec_network
+            .create_infer_request()
+            .map_err(|e| format!("Can't create InferRequest, errpr = {e:?}"))?;
+        let graph_execution_context = GraphExecutionContextInternalData {
+            cnn_network,
+            executable_network: Mutex::new(exec_network),
+            infer_request,
+        };
+        Ok(graph_execution_context)
+    }
 }
 
 #[async_trait]
@@ -130,6 +163,27 @@ impl graph::HostGraph for MLHostImpl {
     > {
         self.load_openvino()?;
         if let Some(graph) = self.graphs.get(graph.rep()) {
+            Ok(
+                match MLHostImpl::new_execution_context(self.openvino.as_mut().expect(""), graph) {
+                    Ok(graph_execution_context) => self
+                        .executions
+                        .push(graph_execution_context)
+                        .map(Resource::<inference::GraphExecutionContext>::new_own)
+                        .map_err(|_| {
+                            MLHostImpl::new_error(
+                                &mut self.errors,
+                                ErrorCode::RuntimeError,
+                                "Can't create graph execution context".to_string(),
+                            )
+                        }),
+                    Err(message) => Err(MLHostImpl::new_error(
+                        &mut self.errors,
+                        ErrorCode::RuntimeError,
+                        message,
+                    )),
+                },
+            )
+            /*
             let mut cnn_network = self
                 .openvino
                 .as_mut()
@@ -179,6 +233,7 @@ impl graph::HostGraph for MLHostImpl {
                 )),
             };
             Ok(x)
+            */
         } else {
             Err(anyhow!(
                 "[graph::HostGraph] fn init_execution_context -> Not implemented"
