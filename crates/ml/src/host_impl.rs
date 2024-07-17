@@ -183,57 +183,6 @@ impl graph::HostGraph for MLHostImpl {
                     )),
                 },
             )
-            /*
-            let mut cnn_network = self
-                .openvino
-                .as_mut()
-                .expect("")
-                .read_network_from_buffer(&graph.xml, &graph.weights)?;
-
-            // Construct OpenVINO graph structures: `cnn_network` contains the graph
-            // structure, `exec_network` can perform inference.
-            //let core = self
-            //    .0
-            //    .as_mut()
-            //    .expect("openvino::Core was previously constructed");
-            //let mut cnn_network = core.read_network_from_buffer(&xml, &weights)?;
-
-            // TODO: this is a temporary workaround. We need a more elegant way to
-            // specify the layout in the long run. However, without this newer
-            // versions of OpenVINO will fail due to parameter mismatch.
-            for i in 0..cnn_network.get_inputs_len().unwrap() {
-                let name = cnn_network.get_input_name(i)?;
-                cnn_network.set_input_layout(&name, Layout::NHWC)?;
-            }
-
-            let mut exec_network = self
-                .openvino
-                .as_mut()
-                .expect("")
-                .load_network(&cnn_network, map_execution_target_to_string(graph.target))?;
-            let infer_request = exec_network
-                .create_infer_request()
-                .expect("Can't create InferRequest");
-            let graph_execution_context = GraphExecutionContextInternalData {
-                cnn_network,
-                executable_network: Mutex::new(exec_network),
-                infer_request,
-            };
-
-            let res = self
-                .executions
-                .push(graph_execution_context)
-                .map(Resource::<inference::GraphExecutionContext>::new_own);
-            let x = match res {
-                Ok(res) => Ok(res),
-                Err(_) => Err(MLHostImpl::new_error(
-                    &mut self.errors,
-                    ErrorCode::RuntimeError,
-                    "Can't create graph execution context".to_string(),
-                )),
-            };
-            Ok(x)
-            */
         } else {
             Err(anyhow!(
                 "[graph::HostGraph] fn init_execution_context -> Not implemented"
