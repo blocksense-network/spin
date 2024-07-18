@@ -82,7 +82,7 @@ fn imagenet_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
             }
 
             use core::result::Result::Ok;
-            let imagenet_name = format!("imagenet:{}", target);
+            let imagenet_name = format!("openvino:imagenet:{}", target);
             match load_by_name(&imagenet_name) {
                 Ok(imagenet_graph) => match graph::Graph::init_execution_context(&imagenet_graph) {
                     Ok(context) => {

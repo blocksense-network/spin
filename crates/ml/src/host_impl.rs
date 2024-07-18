@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use spin_core::wasmtime::component::Resource;
 use tokio::sync::Mutex;
 
+use crate::backend::BackendInner;
+
 use openvino::{Core, Layout, Precision, TensorDesc};
 
 #[derive(Debug)]
@@ -46,10 +48,11 @@ pub struct MLHostImpl {
     pub executions: table::Table<GraphExecutionContextInternalData>,
     pub tensors: table::Table<TensorInternalData>,
     pub errors: table::Table<ErrorInternalData>,
+
+    pub backends: Vec<Box<dyn BackendInner>>,
 }
 
 impl MLHostImpl {
-
     fn loeaded_to_graph(
         &mut self,
         model: OpenvinoModel,
@@ -453,18 +456,30 @@ impl graph::Host for MLHostImpl {
         &mut self,
         model_name: String,
     ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
-        if model_name == "imagenet" {
-            return self.load_imagenet(ExecutionTarget::Gpu);
-        }
         let parts: Vec<_> = model_name.split(':').map(|x| x.to_string()).collect();
-        if parts.len() == 2 {
-            if let Some(target) = map_string_to_execution_target(&parts[1]) {
-                let model_name = &parts[0];
-                if model_name == "imagenet" {
-                    return self.load_imagenet(target);
+        if parts.len() > 1 {
+            if let Some(graph_encoding) = map_string_to_graph_encoding(&parts[0]) {
+                for backend in self.backends.iter() {
+                    if backend.encoding() == graph_encoding {
+                        //return backend.load_by_name(model_name);
+
+                        if model_name == "imagenet" {
+                            return self.load_imagenet(ExecutionTarget::Gpu);
+                        }
+
+                        if parts.len() == 3 {
+                            if let Some(target) = map_string_to_execution_target(&parts[2]) {
+                                let model_name = &parts[1];
+                                if model_name == "imagenet" {
+                                    return self.load_imagenet(target);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
+
         Err(anyhow!(
             "[graph::Host] fn load_by_name -> model not supported "
         ))
@@ -483,6 +498,13 @@ fn map_execution_target_to_string(target: ExecutionTarget) -> &'static str {
         ExecutionTarget::Tpu => {
             unimplemented!("OpenVINO does not support TPU execution targets")
         }
+    }
+}
+
+fn map_string_to_graph_encoding(target: &str) -> Option<GraphEncoding> {
+    match target {
+        "openvino" => Some(GraphEncoding::Openvino),
+        _ => None,
     }
 }
 
