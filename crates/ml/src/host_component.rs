@@ -4,7 +4,6 @@ use spin_app::DynamicHostComponent;
 use spin_core::HostComponent;
 use spin_world::v2 as ml_wit;
 
-use crate::backend;
 use crate::backend::openvino::OpenvinoBackend;
 use crate::{backend::BackendInner, host_impl::MLHostImpl};
 //#[derive(Clone)]
@@ -29,11 +28,11 @@ impl HostComponent for MLHostComponent {
         let mut backends: Vec<Box<dyn BackendInner>> = vec![];
         backends.push(Box::new(OpenvinoBackend {
             openvino: openvino::Core::new(None).ok(),
+            state_dir: self.state_dir.clone(),
         }));
 
         MLHostImpl {
             state_dir: self.state_dir.clone(),
-            openvino: openvino::Core::new(None).ok(),
             backends,
             ..Default::default()
         }

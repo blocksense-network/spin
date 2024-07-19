@@ -17,7 +17,6 @@ pub fn elapsed_to_string(fn_name: &str, elapsed: u128) -> String {
     }
 }
 
-
 #[derive(Debug)]
 pub struct DescriptiveInferenceResult {
     pub weight: f32,

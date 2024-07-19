@@ -9,6 +9,8 @@ use ml_wit::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
 use ml_wit::inference::GraphExecutionContext;
 use ml_wit::{errors, graph, inference, tensor};
 
+use crate::host_impl::{GraphExecutionContextInternalData, GraphInternalData, TensorInternalData};
+
 /// A [BackendGraph] can create [BackendExecutionContext]s; this is the backing
 /// implementation for the user-facing graph.
 pub trait BackendGraph: Send + Sync {
@@ -19,7 +21,27 @@ pub trait BackendGraph: Send + Sync {
 pub trait BackendInner: Send + Sync {
     fn encoding(&self) -> GraphEncoding;
     fn load(&mut self, builders: &[&[u8]], target: ExecutionTarget) -> Result<Graph, String>;
+
+    fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error>;
     //fn as_dir_loadable<'a>(&'a mut self) -> Option<&'a mut dyn BackendFromDir>;
+
+    fn new_execution_context(
+        &mut self,
+        graph: &GraphInternalData,
+    ) -> Result<GraphExecutionContextInternalData, anyhow::Error>;
+
+    fn set_input(
+        &mut self,
+        graph_execution_context: &mut GraphExecutionContextInternalData,
+        input_name: String,
+        tensor: &TensorInternalData,
+    ) -> Result<(), anyhow::Error>;
+
+    fn get_output(
+        &mut self,
+        graph_execution_context: &mut GraphExecutionContextInternalData,
+        input_name: String,
+    ) -> Result<TensorInternalData, anyhow::Error>;
 }
 
 /*

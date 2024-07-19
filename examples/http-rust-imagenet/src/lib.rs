@@ -1,10 +1,9 @@
 use anyhow::Ok;
-use http::{HeaderValue, Method, HeaderMap};
+use http::{HeaderMap, HeaderValue, Method};
 use multipart::server::Multipart;
 use std::io::Read;
 
 use ml::fermyon::spin::graph::load_by_name;
-
 
 use spin_sdk::http::{IntoResponse, Response};
 use spin_sdk::http_component;
@@ -17,14 +16,12 @@ mod ml {
     });
 }
 
-
 mod imagenet;
 mod imagenet_classes;
 
-
-use crate::ml::fermyon::spin::graph;
-use crate::imagenet::imagenet_infer;
 use crate::imagenet::elapsed_to_string;
+use crate::imagenet::imagenet_infer;
+use crate::ml::fermyon::spin::graph;
 
 fn parse_content_type(headers: &HeaderMap<HeaderValue>) -> Option<mime::Mime> {
     headers
@@ -110,7 +107,10 @@ fn imagenet_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
                                         ));
                                     }
 
-                                    let caption = elapsed_to_string("Inference time", res.first().unwrap().inference_time_in_ns);
+                                    let caption = elapsed_to_string(
+                                        "Inference time",
+                                        res.first().unwrap().inference_time_in_ns,
+                                    );
                                     b.push_str(format!("<caption>{}</caption>", caption).as_str());
                                     b.push_str("</table>");
 
