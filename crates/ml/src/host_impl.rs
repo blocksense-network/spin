@@ -11,6 +11,7 @@ use spin_core::wasmtime::component::Resource;
 use tokio::sync::Mutex;
 
 use crate::backend::BackendInner;
+use crate::backend::ExecutionContextInner;
 
 #[derive(Debug)]
 pub struct GraphInternalData {
@@ -20,7 +21,7 @@ pub struct GraphInternalData {
     pub encoding: GraphEncoding,
 }
 
-pub struct GraphExecutionContextInternalData {
+pub struct OpenvinoExecutionContext {
     pub cnn_network: openvino::CNNNetwork,
     pub executable_network: Mutex<openvino::ExecutableNetwork>,
     pub infer_request: openvino::InferRequest,
@@ -40,9 +41,8 @@ pub struct ErrorInternalData {
 #[derive(Default)]
 pub struct MLHostImpl {
     pub state_dir: Option<PathBuf>,
-    //pub openvino: Option<openvino::Core>,
     pub graphs: table::Table<GraphInternalData>,
-    pub executions: table::Table<GraphExecutionContextInternalData>,
+    pub executions: table::Table<OpenvinoExecutionContext>,
     pub tensors: table::Table<TensorInternalData>,
     pub errors: table::Table<ErrorInternalData>,
 
@@ -238,7 +238,7 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
         input_name: String,
         tensor: Resource<tensor::Tensor>,
     ) -> Result<Result<(), Resource<errors::Error>>, anyhow::Error> {
-        let execution_context: &mut GraphExecutionContextInternalData = self
+        let execution_context: &mut OpenvinoExecutionContext = self
             .executions
             .get_mut(graph_execution_context.rep())
             .context(format!(
@@ -251,20 +251,11 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
             .get(tensor.rep())
             .context(format!("Can't find tensor with ID = {}", tensor.rep()))?;
 
-        for backend in self.backends.iter_mut() {
-            if backend.encoding() == GraphEncoding::Openvino {
-                return Ok(backend
-                    .set_input(execution_context, input_name, &tensor_resource)
-                    .map_err(|err| {
-                        MLHostImpl::new_error(
-                            &mut self.errors,
-                            ErrorCode::RuntimeError,
-                            err.to_string(),
-                        )
-                    }));
-            }
-        }
-        return Err(anyhow!("Backend not found"));
+        Ok(execution_context
+            .set_input(input_name, &tensor_resource)
+            .map_err(|err| {
+                MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, err.to_string())
+            }))
     }
 
     async fn compute(
@@ -278,7 +269,8 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
                 "Can't find graph execution context with ID = {}",
                 graph_execution_context.rep()
             )))?;
-        Ok(graph_execution.infer_request.infer().map_err(|err| {
+
+        Ok(graph_execution.compute().map_err(|err| {
             MLHostImpl::new_error(
                 &mut self.errors,
                 ErrorCode::RuntimeError,
@@ -300,44 +292,35 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
                 graph_execution_context.rep()
             )))?;
 
-        for backend in self.backends.iter_mut() {
-            if backend.encoding() == GraphEncoding::Openvino {
-                let res = backend
-                    .get_output(graph_execution, input_name) //, &tensor_resource)
-                    .map_err(|err| {
-                        MLHostImpl::new_error(
-                            &mut self.errors,
-                            ErrorCode::RuntimeError,
-                            err.to_string(),
-                        )
-                    });
-                match res {
-                    Ok(tensor) => {
-                        match self
-                            .tensors
-                            .push(tensor)
-                            .map(Resource::<tensor::Tensor>::new_own)
-                        {
-                            Ok(t) => return Ok(Ok(t)),
-                            Err(_) => {
-                                return Ok(Err(self
-                                    .errors
-                                    .push(ErrorInternalData {
-                                        code: ErrorCode::RuntimeError,
-                                        message: "Can't create tensor for get_output".to_string(),
-                                    })
-                                    .map(Resource::<errors::Error>::new_own)
-                                    .map_err(|_| anyhow!("Can't allocate error"))?));
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        return Ok(Err(err));
+        let res = graph_execution
+            .get_output(input_name)
+            .map_err(|err| {
+                MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, err.to_string())
+            });
+        match res {
+            Ok(tensor) => {
+                match self
+                    .tensors
+                    .push(tensor)
+                    .map(Resource::<tensor::Tensor>::new_own)
+                {
+                    Ok(t) => return Ok(Ok(t)),
+                    Err(_) => {
+                        return Ok(Err(self
+                            .errors
+                            .push(ErrorInternalData {
+                                code: ErrorCode::RuntimeError,
+                                message: "Can't create tensor for get_output".to_string(),
+                            })
+                            .map(Resource::<errors::Error>::new_own)
+                            .map_err(|_| anyhow!("Can't allocate error"))?));
                     }
                 }
             }
+            Err(err) => {
+                return Ok(Err(err));
+            }
         }
-        return Err(anyhow!("Backend not found"));
     }
 
     fn drop(&mut self, execution: Resource<GraphExecutionContext>) -> Result<(), anyhow::Error> {

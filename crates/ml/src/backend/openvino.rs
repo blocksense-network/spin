@@ -5,13 +5,13 @@ use ml_wit::tensor::TensorType;
 
 use crate::backend::{errors, tensor};
 
-use super::BackendInner;
+use super::{BackendInner, ExecutionContextInner};
 use crate::imagenet_download::{imagenet_check_models, imagenet_download, OpenvinoModel};
 use openvino::{Core, Layout, Precision, TensorDesc};
 use std::path::PathBuf;
 
-use crate::host_impl::{GraphExecutionContextInternalData, TensorInternalData};
 use crate::host_impl::{GraphInternalData, MLHostImpl};
+use crate::host_impl::{OpenvinoExecutionContext, TensorInternalData};
 use anyhow::{anyhow, Context};
 use tokio::sync::Mutex;
 
@@ -49,7 +49,7 @@ impl BackendInner for OpenvinoBackend {
     fn new_execution_context(
         &mut self,
         graph: &GraphInternalData,
-    ) -> Result<GraphExecutionContextInternalData, anyhow::Error> {
+    ) -> Result<OpenvinoExecutionContext, anyhow::Error> {
         let openvino = self
             .openvino
             .as_mut()
@@ -57,10 +57,10 @@ impl BackendInner for OpenvinoBackend {
         OpenvinoBackend::new_execution_context(openvino, graph)
             .map_err(|message| anyhow!("{}", message))
     }
-
+    /*
     fn set_input(
         &mut self,
-        execution_context: &mut GraphExecutionContextInternalData,
+        execution_context: &mut OpenvinoExecutionContext,
         input_name: String,
         tensor_resource: &TensorInternalData,
     ) -> Result<(), anyhow::Error> {
@@ -90,7 +90,7 @@ impl BackendInner for OpenvinoBackend {
 
     fn get_output(
         &mut self,
-        graph_execution_context: &mut GraphExecutionContextInternalData,
+        graph_execution_context: &mut OpenvinoExecutionContext,
         input_name: String,
     ) -> Result<TensorInternalData, anyhow::Error> {
         let index = input_name
@@ -102,6 +102,74 @@ impl BackendInner for OpenvinoBackend {
             .get_output_name(index)
             .context("Can't find output name for ID = {index}")?;
         let blob = graph_execution_context
+            .infer_request
+            .get_blob(&output_name)
+            .context("Can't get blob for output name = {output_name}")?;
+        let tensor_desc = blob.tensor_desc().context("Can't get blob description")?;
+        let buffer = blob.buffer().context("Can't get blob buffer")?.to_vec();
+        let tensor_dimensions = tensor_desc
+            .dims()
+            .iter()
+            .map(|&d| d as u32)
+            .collect::<Vec<_>>();
+
+        let tensor = TensorInternalData {
+            tensor_dimensions,
+            tensor_type: map_precision_to_tensor_type(tensor_desc.precision()),
+            tensor_data: buffer,
+        };
+        Ok(tensor)
+    }
+    */
+}
+unsafe impl Send for OpenvinoExecutionContext {}
+unsafe impl Sync for OpenvinoExecutionContext {}
+
+impl ExecutionContextInner for OpenvinoExecutionContext {
+    fn set_input(
+        &mut self,
+        input_name: String,
+        tensor: &TensorInternalData,
+    ) -> Result<(), anyhow::Error> {
+        let index = input_name
+            .parse()
+            .context("Can't parse {} to usize for input_name")?;
+        // Construct the blob structure. TODO: there must be some good way to
+        // discover the layout here; `desc` should not have to default to NHWC.
+        let precision = map_tensor_type_to_precision(tensor.tensor_type);
+        let dimensions = tensor
+            .tensor_dimensions
+            .iter()
+            .map(|&d| d as usize)
+            .collect::<Vec<_>>();
+        let desc = TensorDesc::new(Layout::NHWC, &dimensions, precision);
+        let blob = openvino::Blob::new(&desc, &tensor.tensor_data)?;
+
+        let input_name = self
+            .cnn_network
+            .get_input_name(index)
+            .context(format!("Can't find input with name = {}", index))?;
+        self.infer_request
+            .set_blob(&input_name, &blob)
+            .map_err(|err| anyhow!("Inference error = {:?}", err.to_string()))
+    }
+
+    fn compute(&mut self) -> Result<(), anyhow::Error> {
+        self.infer_request
+            .infer()
+            .map_err(|err| anyhow!("Inference error = {:?}", err.to_string()))
+    }
+
+    fn get_output(&mut self, input_name: String) -> Result<TensorInternalData, anyhow::Error> {
+        let index = input_name
+            .parse::<usize>()
+            .context("Can't parse {} to usize for input_name")?;
+
+        let output_name = self
+            .cnn_network
+            .get_output_name(index)
+            .context("Can't find output name for ID = {index}")?;
+        let blob = self
             .infer_request
             .get_blob(&output_name)
             .context("Can't get blob for output name = {output_name}")?;
@@ -161,7 +229,7 @@ impl OpenvinoBackend {
     fn new_execution_context(
         openvino: &mut Core,
         graph: &GraphInternalData,
-    ) -> Result<GraphExecutionContextInternalData, String> {
+    ) -> Result<OpenvinoExecutionContext, String> {
         let mut cnn_network = openvino
             .read_network_from_buffer(&graph.xml, &graph.weights)
             .map_err(|e| format!("Can't create graph execution context, err=r {e:?}"))?;
@@ -183,7 +251,7 @@ impl OpenvinoBackend {
         let infer_request = exec_network
             .create_infer_request()
             .map_err(|e| format!("Can't create InferRequest, errpr = {e:?}"))?;
-        let graph_execution_context = GraphExecutionContextInternalData {
+        let graph_execution_context = OpenvinoExecutionContext {
             cnn_network,
             executable_network: Mutex::new(exec_network),
             infer_request,
