@@ -8,23 +8,16 @@ use spin_world::v2 as ml_wit;
 use std::path::PathBuf;
 
 use spin_core::wasmtime::component::Resource;
-use tokio::sync::Mutex;
 
 use crate::backend::BackendInner;
 use crate::backend::ExecutionContextInner;
 
 #[derive(Debug)]
 pub struct GraphInternalData {
-    pub xml: Vec<u8>,
-    pub weights: Vec<u8>,
+    pub builders: Vec<GraphBuilder>,
     pub target: ExecutionTarget,
     pub encoding: GraphEncoding,
-}
-
-pub struct OpenvinoExecutionContext {
-    pub cnn_network: openvino::CNNNetwork,
-    pub executable_network: Mutex<openvino::ExecutableNetwork>,
-    pub infer_request: openvino::InferRequest,
+    pub name: Option<String>,
 }
 
 pub struct TensorInternalData {
@@ -42,10 +35,10 @@ pub struct ErrorInternalData {
 pub struct MLHostImpl {
     pub state_dir: Option<PathBuf>,
     pub graphs: table::Table<GraphInternalData>,
-    pub executions: table::Table<OpenvinoExecutionContext>,
     pub tensors: table::Table<TensorInternalData>,
     pub errors: table::Table<ErrorInternalData>,
 
+    pub executions: table::Table<Box<dyn ExecutionContextInner>>,
     pub backends: Vec<Box<dyn BackendInner>>,
 }
 
@@ -238,7 +231,7 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
         input_name: String,
         tensor: Resource<tensor::Tensor>,
     ) -> Result<Result<(), Resource<errors::Error>>, anyhow::Error> {
-        let execution_context: &mut OpenvinoExecutionContext = self
+        let execution_context = self
             .executions
             .get_mut(graph_execution_context.rep())
             .context(format!(
@@ -246,13 +239,13 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
                 graph_execution_context.rep()
             ))?;
 
-        let tensor_resource = self
+        let tensor = self
             .tensors
             .get(tensor.rep())
             .context(format!("Can't find tensor with ID = {}", tensor.rep()))?;
 
         Ok(execution_context
-            .set_input(input_name, &tensor_resource)
+            .set_input(input_name, tensor)
             .map_err(|err| {
                 MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, err.to_string())
             }))
@@ -292,11 +285,9 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
                 graph_execution_context.rep()
             )))?;
 
-        let res = graph_execution
-            .get_output(input_name)
-            .map_err(|err| {
-                MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, err.to_string())
-            });
+        let res = graph_execution.get_output(input_name).map_err(|err| {
+            MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, err.to_string())
+        });
         match res {
             Ok(tensor) => {
                 match self
@@ -339,24 +330,33 @@ impl errors::Host for MLHostImpl {}
 impl graph::Host for MLHostImpl {
     async fn load(
         &mut self,
-        graph: Vec<GraphBuilder>,
+        builders: Vec<GraphBuilder>,
         graph_encoding: GraphEncoding,
         target: ExecutionTarget,
     ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
-        if graph.len() != 2 {
-            return Err(anyhow!("Expected 2 elements in graph builder vector"));
+        for backend in self.backends.iter_mut() {
+            if backend.encoding() == graph_encoding {
+                match backend.load(builders, target, graph_encoding, None) {
+                    Ok(graph_internal_data) => {
+                        return MLHostImpl::new_graph(
+                            &mut self.graphs,
+                            &mut self.errors,
+                            graph_internal_data,
+                        );
+                    }
+                    Err(err) => {
+                        return Ok(Err(MLHostImpl::new_error(
+                            &mut self.errors,
+                            ErrorCode::RuntimeError,
+                            format!("Can't load model error = {:?}", err),
+                        )));
+                    }
+                }
+            }
         }
-        if graph_encoding != GraphEncoding::Openvino {
-            return Err(anyhow!("Only OpenVINO encoding is supported"));
-        }
-        // Read the guest array.
-        let graph_internal_data = GraphInternalData {
-            xml: graph[0].clone(),
-            weights: graph[1].clone(),
-            target,
-            encoding: graph_encoding,
-        };
-        MLHostImpl::new_graph(&mut self.graphs, &mut self.errors, graph_internal_data)
+        Err(anyhow!(
+            "[graph::Host] fn load -> graph_encoding = {graph_encoding:?} is not supported "
+        ))
     }
 
     async fn load_by_name(

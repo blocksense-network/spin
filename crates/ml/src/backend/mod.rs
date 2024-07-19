@@ -4,12 +4,11 @@ pub mod openvino;
 
 use spin_world::v2 as ml_wit;
 
-use ml_wit::errors::ErrorCode;
-use ml_wit::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
+use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
 use ml_wit::inference::GraphExecutionContext;
-use ml_wit::{errors, graph, inference, tensor};
+use ml_wit::tensor;
 
-use crate::host_impl::{GraphInternalData, OpenvinoExecutionContext, TensorInternalData};
+use crate::host_impl::{GraphInternalData, TensorInternalData};
 
 /// A [BackendGraph] can create [BackendExecutionContext]s; this is the backing
 /// implementation for the user-facing graph.
@@ -20,7 +19,13 @@ pub trait BackendGraph: Send + Sync {
 /// A [Backend] contains the necessary state to load [Graph]s.
 pub trait BackendInner: Send + Sync {
     fn encoding(&self) -> GraphEncoding;
-    fn load(&mut self, builders: &[&[u8]], target: ExecutionTarget) -> Result<Graph, String>;
+    fn load(
+        &mut self,
+        builders: Vec<GraphBuilder>,
+        target: ExecutionTarget,
+        encoding: GraphEncoding,
+        name: Option<String>,
+    ) -> Result<GraphInternalData, anyhow::Error>;
 
     fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error>;
     //fn as_dir_loadable<'a>(&'a mut self) -> Option<&'a mut dyn BackendFromDir>;
@@ -28,7 +33,7 @@ pub trait BackendInner: Send + Sync {
     fn new_execution_context(
         &mut self,
         graph: &GraphInternalData,
-    ) -> Result<OpenvinoExecutionContext, anyhow::Error>;
+    ) -> Result<Box<dyn ExecutionContextInner>, anyhow::Error>;
 }
 
 pub trait ExecutionContextInner: Send + Sync {

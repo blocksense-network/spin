@@ -33,6 +33,7 @@ pub fn try_download(url: &str, filename: &PathBuf) -> Result<(), anyhow::Error> 
 pub struct OpenvinoModel {
     pub xml: Vec<u8>,
     pub weights: Vec<u8>,
+    pub name: String,
 }
 
 pub fn check_file_hash(file_data: &[u8], expected_hash: &[u8; 20]) -> std::io::Result<()> {
@@ -64,6 +65,7 @@ pub fn imagenet_check_models(base_path: &Path) -> std::io::Result<OpenvinoModel>
     Ok(OpenvinoModel {
         xml: model_xml,
         weights: model_weights,
+        name: "imagenet".to_owned(),
     })
 }
 
