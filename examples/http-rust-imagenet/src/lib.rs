@@ -80,6 +80,7 @@ fn imagenet_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
 
             use core::result::Result::Ok;
             let imagenet_name = format!("openvino:imagenet:{}", target);
+            
             match load_by_name(&imagenet_name) {
                 Ok(imagenet_graph) => match graph::Graph::init_execution_context(&imagenet_graph) {
                     Ok(context) => {
@@ -111,7 +112,7 @@ fn imagenet_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
                                         "Inference time",
                                         res.first().unwrap().inference_time_in_ns,
                                     );
-                                    b.push_str(format!("<caption>{}</caption>", caption).as_str());
+                                    b.push_str(format!("<caption>{} on {}</caption>", caption, imagenet_name).as_str());
                                     b.push_str("</table>");
 
                                     b.to_owned()
@@ -136,9 +137,9 @@ fn add_form(mut html_body: String) -> String {
     let form = r#"
     <!-- make sure the attribute enctype is set to multipart/form-data -->
     <form action="/imagenet" method="post" enctype="multipart/form-data">
-
-
-
+        <h2>
+            Select an image to process
+        </h2>
         <!-- upload of a single file -->
         <p>
             <label>Add file (single): </label><br/>
@@ -150,6 +151,13 @@ fn add_form(mut html_body: String) -> String {
                 <option value="CPU">CPU</option>
                 <option value="GPU">GPU</option>
             </select> 
+        </p>
+        <p>
+        <label for="target">Choose a inference network:</label>
+        <select name="model" id="model">
+            <option value="imagenet">imagenet</option>
+            <!--<option value="yolo8">yolo8</option>-->
+        </select> 
         </p>
         <p>
             <input type="submit"/>
