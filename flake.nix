@@ -50,6 +50,8 @@
                 openssl
                 pkg-config
                 rustTarget
+                onnxruntime
+                openvino
               ]
               ++ lib.optionals stdenv.isDarwin [
                 darwin.apple_sdk.frameworks.Accelerate
@@ -64,6 +66,7 @@
                 pkgs.stdenv.cc.cc
                 openssl
               ]}
+              export OPENVINO_INSTALL_DIR="${pkgs.lib.makeLibraryPath [openvino]}/..";
             '';
 
             RUST_SRC_PATH = "${rustTarget}/lib/rustlib/src/rust/library";

@@ -1,10 +1,13 @@
 use anyhow::{anyhow, Context};
+
+use spin_world::v2 as ml_wit;
+
 use ml_wit::errors::ErrorCode;
 use ml_wit::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
 use ml_wit::inference::GraphExecutionContext;
 use ml_wit::{errors, graph, inference, tensor};
+
 use spin_core::async_trait;
-use spin_world::v2 as ml_wit;
 use std::path::PathBuf;
 
 use spin_core::wasmtime::component::Resource;
@@ -380,10 +383,7 @@ impl graph::Host for MLHostImpl {
                                 return Ok(Err(MLHostImpl::new_error(
                                     &mut self.errors,
                                     ErrorCode::RuntimeError,
-                                    format!(
-                                        "Can't load model '{model_name}' error = {}",
-                                        err.to_string()
-                                    ),
+                                    format!("Can't load model '{model_name}' error = {err:?}"),
                                 )));
                             }
                         }
