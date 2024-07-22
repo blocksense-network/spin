@@ -5,15 +5,14 @@ use ml_wit::tensor::TensorType;
 
 use crate::backend::tensor;
 
-use super::{BackendInner, BackendExecutionContext};
+use super::{BackendExecutionContext, BackendInner, TensorId};
 use crate::imagenet_download::{imagenet_check_models, imagenet_download, OpenvinoModel};
 use openvino::{Core, Layout, Precision, TensorDesc};
 use std::path::PathBuf;
 
-use crate::host_impl::{GraphInternalData, TensorInternalData, ExecutionContext};
+use crate::host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
 use anyhow::{anyhow, Context};
 use tokio::sync::Mutex;
-
 
 pub struct OpenvinoBackend {
     pub openvino: openvino::Core,
@@ -69,8 +68,8 @@ impl BackendInner for OpenvinoBackend {
     ) -> Result<ExecutionContext, anyhow::Error> {
         Ok(ExecutionContext(Box::new(
             OpenvinoBackend::new_execution_context(&mut self.openvino, graph)
-                .map_err(|message| anyhow!("{}", message))?),
-        ))
+                .map_err(|message| anyhow!("{}", message))?,
+        )))
     }
 }
 
@@ -86,12 +85,11 @@ unsafe impl Sync for OpenvinoExecutionContext {}
 impl BackendExecutionContext for OpenvinoExecutionContext {
     fn set_input(
         &mut self,
-        input_name: String,
+        tensor_id: &TensorId,
         tensor: &TensorInternalData,
     ) -> Result<(), anyhow::Error> {
-        let index = input_name
-            .parse()
-            .context("Can't parse {} to usize for input_name")?;
+        let index = tensor_id.index().context("Invalid index")? as usize;
+
         // Construct the blob structure. TODO: there must be some good way to
         // discover the layout here; `desc` should not have to default to NHWC.
         let precision = map_tensor_type_to_precision(tensor.tensor_type);
@@ -118,11 +116,8 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
             .map_err(|err| anyhow!("Inference error = {:?}", err.to_string()))
     }
 
-    fn get_output(&mut self, input_name: String) -> Result<TensorInternalData, anyhow::Error> {
-        let index = input_name
-            .parse::<usize>()
-            .context("Can't parse {} to usize for input_name")?;
-
+    fn get_output(&mut self, tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
+        let index = tensor_id.index().context("Invalid index")? as usize;
         let output_name = self
             .cnn_network
             .get_output_name(index)

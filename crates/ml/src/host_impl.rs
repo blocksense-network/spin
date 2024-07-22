@@ -12,8 +12,8 @@ use std::path::PathBuf;
 
 use spin_core::wasmtime::component::Resource;
 
-use crate::backend::BackendInner;
 use crate::backend::BackendExecutionContext;
+use crate::backend::{BackendInner, TensorId};
 
 #[derive(Debug)]
 pub struct GraphInternalData {
@@ -249,8 +249,14 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
             .get(tensor.rep())
             .context(format!("Can't find tensor with ID = {}", tensor.rep()))?;
 
-        Ok(execution_context.0
-            .set_input(input_name, tensor)
+        let index = input_name
+            .parse::<usize>()
+            .context("Can't parse {} to usize for input_name={input_name}")?;
+        let tensor_id = TensorId::Index(index as u32);
+
+        Ok(execution_context
+            .0
+            .set_input(&tensor_id, tensor)
             .map_err(|err| {
                 MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, err.to_string())
             }))
@@ -290,7 +296,12 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
                 graph_execution_context.rep()
             )))?;
 
-        let res = graph_execution.0.get_output(input_name).map_err(|err| {
+        let index = input_name
+            .parse::<usize>()
+            .context("Can't parse {} to usize for input_name={input_name}")?;
+        let tensor_id = TensorId::Index(index as u32);
+
+        let res = graph_execution.0.get_output(&tensor_id).map_err(|err| {
             MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, err.to_string())
         });
         match res {
