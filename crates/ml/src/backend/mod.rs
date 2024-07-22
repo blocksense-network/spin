@@ -5,7 +5,7 @@ pub mod openvino;
 use spin_world::v2 as ml_wit;
 
 use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
-use ml_wit::inference::GraphExecutionContext;
+//use ml_wit::inference::GraphExecutionContext;
 use ml_wit::tensor;
 
 use crate::host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
