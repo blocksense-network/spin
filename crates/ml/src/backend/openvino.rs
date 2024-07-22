@@ -5,14 +5,15 @@ use ml_wit::tensor::TensorType;
 
 use crate::backend::tensor;
 
-use super::{BackendInner, ExecutionContextInner};
+use super::{BackendInner, BackendExecutionContext};
 use crate::imagenet_download::{imagenet_check_models, imagenet_download, OpenvinoModel};
 use openvino::{Core, Layout, Precision, TensorDesc};
 use std::path::PathBuf;
 
-use crate::host_impl::{GraphInternalData, TensorInternalData};
+use crate::host_impl::{GraphInternalData, TensorInternalData, ExecutionContext};
 use anyhow::{anyhow, Context};
 use tokio::sync::Mutex;
+
 
 pub struct OpenvinoBackend {
     pub openvino: openvino::Core,
@@ -62,13 +63,13 @@ impl BackendInner for OpenvinoBackend {
         Err(anyhow!("not implemented"))
     }
 
-    fn new_execution_context(
+    fn init_execution_context(
         &mut self,
         graph: &GraphInternalData,
-    ) -> Result<Box<dyn ExecutionContextInner>, anyhow::Error> {
-        Ok(Box::new(
+    ) -> Result<ExecutionContext, anyhow::Error> {
+        Ok(ExecutionContext(Box::new(
             OpenvinoBackend::new_execution_context(&mut self.openvino, graph)
-                .map_err(|message| anyhow!("{}", message))?,
+                .map_err(|message| anyhow!("{}", message))?),
         ))
     }
 }
@@ -82,7 +83,7 @@ pub struct OpenvinoExecutionContext {
 unsafe impl Send for OpenvinoExecutionContext {}
 unsafe impl Sync for OpenvinoExecutionContext {}
 
-impl ExecutionContextInner for OpenvinoExecutionContext {
+impl BackendExecutionContext for OpenvinoExecutionContext {
     fn set_input(
         &mut self,
         input_name: String,

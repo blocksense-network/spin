@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use spin_core::wasmtime::component::Resource;
 
 use crate::backend::BackendInner;
-use crate::backend::ExecutionContextInner;
+use crate::backend::BackendExecutionContext;
 
 #[derive(Debug)]
 pub struct GraphInternalData {
@@ -34,6 +34,8 @@ pub struct ErrorInternalData {
     message: String,
 }
 
+pub struct ExecutionContext(pub Box<dyn BackendExecutionContext>);
+
 #[derive(Default)]
 pub struct MLHostImpl {
     pub state_dir: Option<PathBuf>,
@@ -41,7 +43,7 @@ pub struct MLHostImpl {
     pub tensors: table::Table<TensorInternalData>,
     pub errors: table::Table<ErrorInternalData>,
 
-    pub executions: table::Table<Box<dyn ExecutionContextInner>>,
+    pub executions: table::Table<ExecutionContext>,
     pub backends: Vec<Box<dyn BackendInner>>,
 }
 
@@ -85,11 +87,11 @@ impl graph::HostGraph for MLHostImpl {
         if let Some(graph) = self.graphs.get(graph.rep()) {
             for backend in self.backends.iter_mut() {
                 if backend.encoding() == graph.encoding {
-                    match backend.new_execution_context(graph) {
-                        Ok(graph_execution_context) => {
+                    match backend.init_execution_context(graph) {
+                        Ok(execution_context) => {
                             return Ok(self
                                 .executions
-                                .push(graph_execution_context)
+                                .push(execution_context)
                                 .map(Resource::<inference::GraphExecutionContext>::new_own)
                                 .map_err(|_| {
                                     MLHostImpl::new_error(
@@ -247,7 +249,7 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
             .get(tensor.rep())
             .context(format!("Can't find tensor with ID = {}", tensor.rep()))?;
 
-        Ok(execution_context
+        Ok(execution_context.0
             .set_input(input_name, tensor)
             .map_err(|err| {
                 MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, err.to_string())
@@ -266,7 +268,7 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
                 graph_execution_context.rep()
             )))?;
 
-        Ok(graph_execution.compute().map_err(|err| {
+        Ok(graph_execution.0.compute().map_err(|err| {
             MLHostImpl::new_error(
                 &mut self.errors,
                 ErrorCode::RuntimeError,
@@ -288,7 +290,7 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
                 graph_execution_context.rep()
             )))?;
 
-        let res = graph_execution.get_output(input_name).map_err(|err| {
+        let res = graph_execution.0.get_output(input_name).map_err(|err| {
             MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, err.to_string())
         });
         match res {
