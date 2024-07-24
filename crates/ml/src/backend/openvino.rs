@@ -52,7 +52,7 @@ impl BackendInner for OpenvinoBackend {
         // Read the guest array.
         let xml = &builders[0];
         let weights = &builders[1];
-        println!("xml len = {} weights len = {}", xml.len(), weights.len());
+
         // Construct a new tensor for the model weights.
         let shape = Shape::new(&[1, weights.len() as i64 / 4])?;
         let mut weights_tensor = OvTensor::new(ElementType::F32, &shape)?;
@@ -65,13 +65,6 @@ impl BackendInner for OpenvinoBackend {
         let model = self
             .openvino
             .read_model_from_buffer(xml, Some(&weights_tensor))?;
-
-        /*let pre_post_process = prepostprocess::Pipeline::new(&mut model)?;
-        let input_info = pre_post_process.get_input_info_by_name("input")?;
-        let mut input_tensor_info = input_info.get_tensor_info()?;
-        //input_tensor_info.set_from(&tensor)?;
-        input_tensor_info.set_layout(Layout::new("NHWC")?)?;
-        let new_model = pre_post_process.build_new_model()?;*/
 
         let compiled_model = self
             .openvino
@@ -105,18 +98,7 @@ impl BackendInner for OpenvinoBackend {
 impl BackendGraph for OpenvinoGraph {
     fn init_execution_context(&mut self) -> Result<ExecutionContext, anyhow::Error> {
         let mut compiled_model = self.0.lock().unwrap();
-        let input = compiled_model.get_input()?;
-        let input_shape = input.get_shape().unwrap();
-        let input_type = input.get_element_type().unwrap();
-        let input_name = input.get_name().unwrap();
-
-        println!("input shape dimention = {:?}", input_shape.get_dimensions());
-        println!("input shape rank      = {:?}", input_shape.get_rank());
-        println!("input type            = {:?}", input_type);
-        println!("input name            = {:?}", input_name);
-
         let infer_request = compiled_model.create_infer_request()?;
-
         Ok(ExecutionContext(Box::new(OpenvinoExecutionContext {
             infer_request,
         })))
@@ -124,8 +106,6 @@ impl BackendGraph for OpenvinoGraph {
 }
 
 pub struct OpenvinoExecutionContext {
-    //pub cnn_network: openvino::CNNNetwork,
-    //pub executable_network: Mutex<openvino::ExecutableNetwork>,
     pub infer_request: openvino::InferRequest,
 }
 
@@ -135,17 +115,11 @@ unsafe impl Sync for OpenvinoExecutionContext {}
 impl BackendExecutionContext for OpenvinoExecutionContext {
     fn set_input(
         &mut self,
-        _tensor_id: &TensorId,
+        tensor_id: &TensorId,
         tensor: &TensorInternalData,
     ) -> Result<(), anyhow::Error> {
         // Construct the tensor.
-        let mut input_tensor = self.infer_request.get_input_tensor().unwrap();
-
-        let data = input_tensor.get_raw_data_mut().unwrap();
-        data.copy_from_slice(&tensor.tensor_data);
-        /*
-
-        let precision = map_tensor_type_to_precision(tensor.tensor_type);
+        let precision = map_tensor_type_to_element_type(&tensor.tensor_type);
         let dimensions = tensor
             .tensor_dimensions
             .iter()
@@ -163,7 +137,7 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
                 .set_input_tensor_by_index(i.clone() as usize, &new_tensor)?,
             TensorId::Name(name) => self.infer_request.set_tensor(&name, &new_tensor)?,
         };
-        */
+
         Ok(())
     }
 
@@ -173,15 +147,13 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
             .map_err(|err| anyhow!("Inference error = {:?}", err.to_string()))
     }
 
-    fn get_output(&mut self, _tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
-        let output_tensor = self.infer_request.get_output_tensor().unwrap();
-        //output.
-        /*let output_tensor = match tensor_id {
+    fn get_output(&mut self, tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
+        let output_tensor = match tensor_id {
             TensorId::Index(i) => self
                 .infer_request
                 .get_output_tensor_by_index(i.clone() as usize)?,
             TensorId::Name(name) => self.infer_request.get_tensor(&name)?,
-        };*/
+        };
         let dimensions = output_tensor
             .get_shape()?
             .get_dimensions()
@@ -241,21 +213,6 @@ fn map_string_to_execution_target(target: &str) -> Option<ExecutionTarget> {
     }
 }
 
-/// Return OpenVINO's precision type for the `TensorType` enum provided by
-/// wasi-nn.
-///
-/*
-fn map_tensor_type_to_precision(tensor_type: tensor::TensorType) -> openvino::ElementType {
-    match tensor_type {
-        TensorType::Fp16 => ElementType::F16,
-        TensorType::Fp32 => ElementType::F32,
-        TensorType::Fp64 => ElementType::F64,
-        TensorType::U8 => ElementType::U8,
-        TensorType::I32 => ElementType::I32,
-        TensorType::I64 => ElementType::I64,
-        TensorType::Bf16 => ElementType::Bf16,
-    }
-}*/
 fn map_precision_to_tensor_type(precision: openvino::ElementType) -> tensor::TensorType {
     //use openvino::Precision;
     match precision {
@@ -266,5 +223,17 @@ fn map_precision_to_tensor_type(precision: openvino::ElementType) -> tensor::Ten
         ElementType::I32 => TensorType::I32,
         ElementType::I64 => TensorType::I64,
         _ => todo!("not yet supported in `openvino` bindings"),
+    }
+}
+
+fn map_tensor_type_to_element_type(tensor_type: &TensorType) -> ElementType {
+    match tensor_type {
+        TensorType::Fp16 => ElementType::F16,
+        TensorType::Fp32 => ElementType::F32,
+        TensorType::Fp64 => ElementType::F64,
+        TensorType::U8 => ElementType::U8,
+        TensorType::I32 => ElementType::I32,
+        TensorType::I64 => ElementType::I64,
+        TensorType::Bf16 => ElementType::Bf16,
     }
 }
