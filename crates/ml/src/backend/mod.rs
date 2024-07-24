@@ -23,17 +23,18 @@ pub trait BackendInner: Send + Sync {
 
     fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error>;
     //fn as_dir_loadable<'a>(&'a mut self) -> Option<&'a mut dyn BackendFromDir>;
-
+    /*
     fn init_execution_context(
         &mut self,
         graph: &GraphInternalData,
     ) -> Result<ExecutionContext, anyhow::Error>;
+     */
 }
 
 /// A [BackendGraph] can create [BackendExecutionContext]s; this is the backing
 /// implementation for the user-facing graph.
 pub trait BackendGraph: Send + Sync {
-    fn init_execution_context(&self) -> Result<ExecutionContext, anyhow::Error>;
+    fn init_execution_context(&mut self) -> Result<ExecutionContext, anyhow::Error>;
 }
 
 pub trait BackendExecutionContext: Send + Sync {

@@ -4,20 +4,28 @@ use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
 use ml_wit::tensor::TensorType;
 
 use crate::backend::tensor;
+use crate::backend::BackendGraph;
 
 use super::{BackendExecutionContext, BackendInner, TensorId};
+
 use crate::imagenet_download::{imagenet_check_models, imagenet_download, OpenvinoModel};
-use openvino::{Core, Layout, Precision, TensorDesc};
+use openvino::{DeviceType, ElementType, InferenceError, SetupError, Shape, Tensor as OvTensor};
 use std::path::PathBuf;
 
 use crate::host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
 use anyhow::{anyhow, Context};
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub struct OpenvinoBackend {
     pub openvino: openvino::Core,
     pub state_dir: Option<PathBuf>,
 }
+
+struct OpenvinoGraph(Arc<Mutex<openvino::CompiledModel>>);
+
+unsafe impl Send for OpenvinoGraph {}
+unsafe impl Sync for OpenvinoGraph {}
+
 unsafe impl Send for OpenvinoBackend {}
 unsafe impl Sync for OpenvinoBackend {}
 
@@ -39,14 +47,30 @@ impl BackendInner for OpenvinoBackend {
         if encoding != GraphEncoding::Openvino {
             return Err(anyhow!("Only OpenVINO encoding is supported"));
         }
+
         // Read the guest array.
-        let graph_internal_data = GraphInternalData {
-            builders,
-            target,
-            encoding,
-            name,
-        };
-        Ok(graph_internal_data)
+        let xml = &builders[0];
+        let weights = &builders[1];
+        println!("xml len = {} weights len = {}", xml.len(), weights.len());
+        // Construct a new tensor for the model weights.
+        let shape = Shape::new(&[1, weights.len() as i64])?;
+        let mut weights_tensor = OvTensor::new(ElementType::U8, &shape)?;
+        let buffer = weights_tensor.get_raw_data_mut()?;
+        buffer.copy_from_slice(&weights);
+
+        // Construct OpenVINO graph structures: `model` contains the graph
+        // structure, `compiled_model` can perform inference.
+
+        let model = self
+            .openvino
+            .read_model_from_buffer(&xml, Some(&weights_tensor))?;
+        let compiled_model = self
+            .openvino
+            .compile_model(&model, map_execution_target_to_string(target))?;
+        Ok(GraphInternalData(Box::new(OpenvinoGraph(Arc::new(
+            Mutex::new(compiled_model),
+        )))))
+        //Ok(box_.into())
     }
 
     fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error> {
@@ -55,27 +79,34 @@ impl BackendInner for OpenvinoBackend {
             if let Some(target) = map_string_to_execution_target(&parts[2]) {
                 let model_name = &parts[1];
                 if model_name == "imagenet" {
-                    return self.load_imagenet(target);
+                    let model = self.imagenet_builders()?;
+                    let builders = vec![model.xml, model.weights];
+                    return self.load(
+                        builders,
+                        target,
+                        GraphEncoding::Openvino,
+                        Some(model_name.clone()),
+                    );
                 }
             }
         }
         Err(anyhow!("not implemented"))
     }
+}
 
-    fn init_execution_context(
-        &mut self,
-        graph: &GraphInternalData,
-    ) -> Result<ExecutionContext, anyhow::Error> {
-        Ok(ExecutionContext(Box::new(
-            OpenvinoBackend::new_execution_context(&mut self.openvino, graph)
-                .map_err(|message| anyhow!("{}", message))?,
-        )))
+impl BackendGraph for OpenvinoGraph {
+    fn init_execution_context(&mut self) -> Result<ExecutionContext, anyhow::Error> {
+        let mut compiled_model = self.0.lock().unwrap();
+        let infer_request = compiled_model.create_infer_request()?;
+        Ok(ExecutionContext(Box::new(OpenvinoExecutionContext {
+            infer_request,
+        })))
     }
 }
 
 pub struct OpenvinoExecutionContext {
-    pub cnn_network: openvino::CNNNetwork,
-    pub executable_network: Mutex<openvino::ExecutableNetwork>,
+    //pub cnn_network: openvino::CNNNetwork,
+    //pub executable_network: Mutex<openvino::ExecutableNetwork>,
     pub infer_request: openvino::InferRequest,
 }
 
@@ -88,26 +119,25 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
         tensor_id: &TensorId,
         tensor: &TensorInternalData,
     ) -> Result<(), anyhow::Error> {
-        let index = tensor_id.index().context("Invalid index")? as usize;
-
-        // Construct the blob structure. TODO: there must be some good way to
-        // discover the layout here; `desc` should not have to default to NHWC.
+        // Construct the tensor.
         let precision = map_tensor_type_to_precision(tensor.tensor_type);
         let dimensions = tensor
             .tensor_dimensions
             .iter()
-            .map(|&d| d as usize)
+            .map(|&d| d as i64)
             .collect::<Vec<_>>();
-        let desc = TensorDesc::new(Layout::NHWC, &dimensions, precision);
-        let blob = openvino::Blob::new(&desc, &tensor.tensor_data)?;
-
-        let input_name = self
-            .cnn_network
-            .get_input_name(index)
-            .context(format!("Can't find input with name = {}", index))?;
-        self.infer_request
-            .set_blob(&input_name, &blob)
-            .map_err(|err| anyhow!("Inference error = {:?}", err.to_string()))
+        let shape = Shape::new(&dimensions)?;
+        let mut new_tensor = OvTensor::new(precision, &shape)?;
+        let buffer = new_tensor.get_raw_data_mut()?;
+        buffer.copy_from_slice(&tensor.tensor_data);
+        // Assign the tensor to the request.
+        match tensor_id {
+            TensorId::Index(i) => self
+                .infer_request
+                .set_input_tensor_by_index(i.clone() as usize, &new_tensor)?,
+            TensorId::Name(name) => self.infer_request.set_tensor(&name, &new_tensor)?,
+        };
+        Ok(())
     }
 
     fn compute(&mut self) -> Result<(), anyhow::Error> {
@@ -117,44 +147,38 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
     }
 
     fn get_output(&mut self, tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
-        let index = tensor_id.index().context("Invalid index")? as usize;
-        let output_name = self
-            .cnn_network
-            .get_output_name(index)
-            .context("Can't find output name for ID = {index}")?;
-        let blob = self
-            .infer_request
-            .get_blob(&output_name)
-            .context("Can't get blob for output name = {output_name}")?;
-        let tensor_desc = blob.tensor_desc().context("Can't get blob description")?;
-        let buffer = blob.buffer().context("Can't get blob buffer")?.to_vec();
-        let tensor_dimensions = tensor_desc
-            .dims()
-            .iter()
-            .map(|&d| d as u32)
-            .collect::<Vec<_>>();
-
-        let tensor = TensorInternalData {
-            tensor_dimensions,
-            tensor_type: map_precision_to_tensor_type(tensor_desc.precision()),
-            tensor_data: buffer,
+        let output_name = match tensor_id {
+            TensorId::Index(i) => self
+                .infer_request
+                .get_output_tensor_by_index(i.clone() as usize)?,
+            TensorId::Name(name) => self.infer_request.get_tensor(&name)?,
         };
-        Ok(tensor)
+        let dimensions = output_name
+            .get_shape()?
+            .get_dimensions()
+            .iter()
+            .map(|&dim| dim as u32)
+            .collect::<Vec<u32>>();
+        let element_type = output_name
+            .get_element_type()
+            .map_err(|err| anyhow!("Inference error = {err:?}"))?;
+        let data = output_name.get_raw_data()?.to_vec();
+        Ok(TensorInternalData {
+            tensor_dimensions: dimensions,
+            tensor_type: map_precision_to_tensor_type(element_type),
+            tensor_data: data,
+        })
     }
 }
 
 impl OpenvinoBackend {
-    fn load_imagenet(
-        &mut self,
-        target: ExecutionTarget,
-    ) -> Result<GraphInternalData, anyhow::Error> {
+    fn imagenet_builders(&mut self) -> Result<OpenvinoModel, anyhow::Error> {
         if let Some(dir) = &self.state_dir {
             match imagenet_check_models(dir) {
-                Ok(model) => self.loeaded_to_graph(model, target),
+                Ok(model) => Ok(model),
                 Err(_) => {
                     imagenet_download(dir)?;
-                    let model = imagenet_check_models(dir).map_err(|e| anyhow!("{:?}", e))?;
-                    self.loeaded_to_graph(model, target)
+                    Ok(imagenet_check_models(dir).map_err(|e| anyhow!("{:?}", e))?)
                 }
             }
         } else {
@@ -163,62 +187,14 @@ impl OpenvinoBackend {
             ))
         }
     }
-
-    fn loeaded_to_graph(
-        &mut self,
-        model: OpenvinoModel,
-        target: ExecutionTarget,
-    ) -> Result<GraphInternalData, anyhow::Error> {
-        let builders = vec![model.xml, model.weights];
-        let graph_internal_data = GraphInternalData {
-            builders,
-            target,
-            encoding: GraphEncoding::Openvino,
-            name: Some(model.name),
-        };
-        Ok(graph_internal_data)
-    }
-
-    fn new_execution_context(
-        openvino: &mut Core,
-        graph: &GraphInternalData,
-    ) -> Result<OpenvinoExecutionContext, String> {
-        let mut cnn_network = openvino
-            .read_network_from_buffer(&graph.builders[0], &graph.builders[1])
-            .map_err(|e| format!("Can't create graph execution context, err=r {e:?}"))?;
-        for i in 0..cnn_network.get_inputs_len().unwrap() {
-            let name = cnn_network.get_input_name(i).map_err(|e| e.to_string())?;
-            cnn_network
-                .set_input_layout(&name, Layout::NHWC)
-                .map_err(|e| e.to_string())?;
-        }
-
-        let mut exec_network: openvino::ExecutableNetwork = openvino
-            .load_network(&cnn_network, map_execution_target_to_string(graph.target))
-            .map_err(|e| {
-                format!(
-                    "Can't create graph execution context for target {:?}, error {e:?}",
-                    graph.target
-                )
-            })?;
-        let infer_request = exec_network
-            .create_infer_request()
-            .map_err(|e| format!("Can't create InferRequest, errpr = {e:?}"))?;
-        let graph_execution_context = OpenvinoExecutionContext {
-            cnn_network,
-            executable_network: Mutex::new(exec_network),
-            infer_request,
-        };
-        Ok(graph_execution_context)
-    }
 }
 
 /// Return the execution target string expected by OpenVINO from the
 /// `ExecutionTarget` enum provided by wasi-nn.
-fn map_execution_target_to_string(target: ExecutionTarget) -> &'static str {
+fn map_execution_target_to_string(target: ExecutionTarget) -> DeviceType<'static> {
     match target {
-        ExecutionTarget::Cpu => "CPU",
-        ExecutionTarget::Gpu => "GPU",
+        ExecutionTarget::Cpu => DeviceType::CPU,
+        ExecutionTarget::Gpu => DeviceType::GPU,
         ExecutionTarget::Tpu => {
             unimplemented!("OpenVINO does not support TPU execution targets")
         }
@@ -239,28 +215,26 @@ fn map_string_to_execution_target(target: &str) -> Option<ExecutionTarget> {
 /// Return OpenVINO's precision type for the `TensorType` enum provided by
 /// wasi-nn.
 ///
-fn map_tensor_type_to_precision(tensor_type: tensor::TensorType) -> openvino::Precision {
-    //use openvino::Precision;
-
+fn map_tensor_type_to_precision(tensor_type: tensor::TensorType) -> openvino::ElementType {
     match tensor_type {
-        TensorType::Fp16 => Precision::FP16,
-        TensorType::Fp32 => Precision::FP32,
-        TensorType::Fp64 => Precision::FP64,
-        TensorType::U8 => Precision::U8,
-        TensorType::I32 => Precision::I32,
-        TensorType::I64 => Precision::I64,
-        TensorType::Bf16 => todo!("not yet supported in `openvino` bindings"),
+        TensorType::Fp16 => ElementType::F16,
+        TensorType::Fp32 => ElementType::F32,
+        TensorType::Fp64 => ElementType::F64,
+        TensorType::U8 => ElementType::U8,
+        TensorType::I32 => ElementType::I32,
+        TensorType::I64 => ElementType::I64,
+        TensorType::Bf16 => ElementType::Bf16,
     }
 }
-fn map_precision_to_tensor_type(precision: openvino::Precision) -> tensor::TensorType {
+fn map_precision_to_tensor_type(precision: openvino::ElementType) -> tensor::TensorType {
     //use openvino::Precision;
     match precision {
-        Precision::FP16 => TensorType::Fp16,
-        Precision::FP32 => TensorType::Fp32,
-        Precision::FP64 => TensorType::Fp64,
-        Precision::U8 => TensorType::U8,
-        Precision::I32 => TensorType::I32,
-        Precision::I64 => TensorType::I64,
+        ElementType::F16 => TensorType::Fp16,
+        ElementType::F32 => TensorType::Fp32,
+        ElementType::F64 => TensorType::Fp64,
+        ElementType::U8 => TensorType::U8,
+        ElementType::I32 => TensorType::I32,
+        ElementType::I64 => TensorType::I64,
         _ => todo!("not yet supported in `openvino` bindings"),
     }
 }

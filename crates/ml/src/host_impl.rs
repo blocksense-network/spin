@@ -12,16 +12,10 @@ use std::path::PathBuf;
 
 use spin_core::wasmtime::component::Resource;
 
-use crate::backend::BackendExecutionContext;
+use crate::backend::{BackendExecutionContext, BackendGraph};
 use crate::backend::{BackendInner, TensorId};
 
-#[derive(Debug)]
-pub struct GraphInternalData {
-    pub builders: Vec<GraphBuilder>,
-    pub target: ExecutionTarget,
-    pub encoding: GraphEncoding,
-    pub name: Option<String>,
-}
+pub struct GraphInternalData(pub Box<dyn BackendGraph>);
 
 pub struct TensorInternalData {
     pub tensor_dimensions: tensor::TensorDimensions,
@@ -84,31 +78,27 @@ impl graph::HostGraph for MLHostImpl {
         Result<Resource<inference::GraphExecutionContext>, Resource<errors::Error>>,
         anyhow::Error,
     > {
-        if let Some(graph) = self.graphs.get(graph.rep()) {
-            for backend in self.backends.iter_mut() {
-                if backend.encoding() == graph.encoding {
-                    match backend.init_execution_context(graph) {
-                        Ok(execution_context) => {
-                            return Ok(self
-                                .executions
-                                .push(execution_context)
-                                .map(Resource::<inference::GraphExecutionContext>::new_own)
-                                .map_err(|_| {
-                                    MLHostImpl::new_error(
-                                        &mut self.errors,
-                                        ErrorCode::RuntimeError,
-                                        "Can't create graph execution context".to_string(),
-                                    )
-                                }));
-                        }
-                        Err(err) => {
-                            return Ok(Err(MLHostImpl::new_error(
+        if let Some(graph) = self.graphs.get_mut(graph.rep()) {
+            match graph.0.init_execution_context() {
+                Ok(execution_context) => {
+                    return Ok(self
+                        .executions
+                        .push(execution_context)
+                        .map(Resource::<inference::GraphExecutionContext>::new_own)
+                        .map_err(|_| {
+                            MLHostImpl::new_error(
                                 &mut self.errors,
                                 ErrorCode::RuntimeError,
-                                err.to_string(),
-                            )));
-                        }
-                    }
+                                "Can't create graph execution context".to_string(),
+                            )
+                        }));
+                }
+                Err(err) => {
+                    return Ok(Err(MLHostImpl::new_error(
+                        &mut self.errors,
+                        ErrorCode::RuntimeError,
+                        err.to_string(),
+                    )));
                 }
             }
         }
