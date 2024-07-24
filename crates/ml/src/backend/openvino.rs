@@ -9,11 +9,12 @@ use crate::backend::BackendGraph;
 use super::{BackendExecutionContext, BackendInner, TensorId};
 
 use crate::imagenet_download::{imagenet_check_models, imagenet_download, OpenvinoModel};
-use openvino::{DeviceType, ElementType, InferenceError, SetupError, Shape, Tensor as OvTensor};
+use openvino::{DeviceType, ElementType, Shape, Tensor as OvTensor};
+
 use std::path::PathBuf;
 
 use crate::host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use std::sync::{Arc, Mutex};
 
 pub struct OpenvinoBackend {
@@ -39,7 +40,7 @@ impl BackendInner for OpenvinoBackend {
         builders: Vec<GraphBuilder>,
         target: ExecutionTarget,
         encoding: GraphEncoding,
-        name: Option<String>,
+        _name: Option<String>,
     ) -> Result<GraphInternalData, anyhow::Error> {
         if builders.len() != 2 {
             return Err(anyhow!("Expected 2 elements in graph builder vector"));
@@ -53,24 +54,31 @@ impl BackendInner for OpenvinoBackend {
         let weights = &builders[1];
         println!("xml len = {} weights len = {}", xml.len(), weights.len());
         // Construct a new tensor for the model weights.
-        let shape = Shape::new(&[1, weights.len() as i64])?;
-        let mut weights_tensor = OvTensor::new(ElementType::U8, &shape)?;
+        let shape = Shape::new(&[1, weights.len() as i64 / 4])?;
+        let mut weights_tensor = OvTensor::new(ElementType::F32, &shape)?;
         let buffer = weights_tensor.get_raw_data_mut()?;
-        buffer.copy_from_slice(&weights);
+        buffer.copy_from_slice(weights);
 
         // Construct OpenVINO graph structures: `model` contains the graph
         // structure, `compiled_model` can perform inference.
 
         let model = self
             .openvino
-            .read_model_from_buffer(&xml, Some(&weights_tensor))?;
+            .read_model_from_buffer(xml, Some(&weights_tensor))?;
+
+        /*let pre_post_process = prepostprocess::Pipeline::new(&mut model)?;
+        let input_info = pre_post_process.get_input_info_by_name("input")?;
+        let mut input_tensor_info = input_info.get_tensor_info()?;
+        //input_tensor_info.set_from(&tensor)?;
+        input_tensor_info.set_layout(Layout::new("NHWC")?)?;
+        let new_model = pre_post_process.build_new_model()?;*/
+
         let compiled_model = self
             .openvino
             .compile_model(&model, map_execution_target_to_string(target))?;
         Ok(GraphInternalData(Box::new(OpenvinoGraph(Arc::new(
             Mutex::new(compiled_model),
         )))))
-        //Ok(box_.into())
     }
 
     fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error> {
@@ -97,7 +105,18 @@ impl BackendInner for OpenvinoBackend {
 impl BackendGraph for OpenvinoGraph {
     fn init_execution_context(&mut self) -> Result<ExecutionContext, anyhow::Error> {
         let mut compiled_model = self.0.lock().unwrap();
+        let input = compiled_model.get_input()?;
+        let input_shape = input.get_shape().unwrap();
+        let input_type = input.get_element_type().unwrap();
+        let input_name = input.get_name().unwrap();
+
+        println!("input shape dimention = {:?}", input_shape.get_dimensions());
+        println!("input shape rank      = {:?}", input_shape.get_rank());
+        println!("input type            = {:?}", input_type);
+        println!("input name            = {:?}", input_name);
+
         let infer_request = compiled_model.create_infer_request()?;
+
         Ok(ExecutionContext(Box::new(OpenvinoExecutionContext {
             infer_request,
         })))
@@ -116,10 +135,16 @@ unsafe impl Sync for OpenvinoExecutionContext {}
 impl BackendExecutionContext for OpenvinoExecutionContext {
     fn set_input(
         &mut self,
-        tensor_id: &TensorId,
+        _tensor_id: &TensorId,
         tensor: &TensorInternalData,
     ) -> Result<(), anyhow::Error> {
         // Construct the tensor.
+        let mut input_tensor = self.infer_request.get_input_tensor().unwrap();
+
+        let data = input_tensor.get_raw_data_mut().unwrap();
+        data.copy_from_slice(&tensor.tensor_data);
+        /*
+
         let precision = map_tensor_type_to_precision(tensor.tensor_type);
         let dimensions = tensor
             .tensor_dimensions
@@ -130,6 +155,7 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
         let mut new_tensor = OvTensor::new(precision, &shape)?;
         let buffer = new_tensor.get_raw_data_mut()?;
         buffer.copy_from_slice(&tensor.tensor_data);
+
         // Assign the tensor to the request.
         match tensor_id {
             TensorId::Index(i) => self
@@ -137,6 +163,7 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
                 .set_input_tensor_by_index(i.clone() as usize, &new_tensor)?,
             TensorId::Name(name) => self.infer_request.set_tensor(&name, &new_tensor)?,
         };
+        */
         Ok(())
     }
 
@@ -146,23 +173,25 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
             .map_err(|err| anyhow!("Inference error = {:?}", err.to_string()))
     }
 
-    fn get_output(&mut self, tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
-        let output_name = match tensor_id {
+    fn get_output(&mut self, _tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
+        let output_tensor = self.infer_request.get_output_tensor().unwrap();
+        //output.
+        /*let output_tensor = match tensor_id {
             TensorId::Index(i) => self
                 .infer_request
                 .get_output_tensor_by_index(i.clone() as usize)?,
             TensorId::Name(name) => self.infer_request.get_tensor(&name)?,
-        };
-        let dimensions = output_name
+        };*/
+        let dimensions = output_tensor
             .get_shape()?
             .get_dimensions()
             .iter()
             .map(|&dim| dim as u32)
             .collect::<Vec<u32>>();
-        let element_type = output_name
+        let element_type = output_tensor
             .get_element_type()
             .map_err(|err| anyhow!("Inference error = {err:?}"))?;
-        let data = output_name.get_raw_data()?.to_vec();
+        let data = output_tensor.get_raw_data()?.to_vec();
         Ok(TensorInternalData {
             tensor_dimensions: dimensions,
             tensor_type: map_precision_to_tensor_type(element_type),
@@ -215,6 +244,7 @@ fn map_string_to_execution_target(target: &str) -> Option<ExecutionTarget> {
 /// Return OpenVINO's precision type for the `TensorType` enum provided by
 /// wasi-nn.
 ///
+/*
 fn map_tensor_type_to_precision(tensor_type: tensor::TensorType) -> openvino::ElementType {
     match tensor_type {
         TensorType::Fp16 => ElementType::F16,
@@ -225,7 +255,7 @@ fn map_tensor_type_to_precision(tensor_type: tensor::TensorType) -> openvino::El
         TensorType::I64 => ElementType::I64,
         TensorType::Bf16 => ElementType::Bf16,
     }
-}
+}*/
 fn map_precision_to_tensor_type(precision: openvino::ElementType) -> tensor::TensorType {
     //use openvino::Precision;
     match precision {
