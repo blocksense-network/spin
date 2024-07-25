@@ -24,4 +24,6 @@ sha2 = "0.10.8"
 brotli = "3.3" # Brotli compression makes big things less big
 mime_guess = "2.0"
 hex = "0.4.3"
+
+rust_tokenizers = "8.1.0"
 [workspace]

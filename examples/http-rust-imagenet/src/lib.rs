@@ -18,6 +18,7 @@ mod ml {
 
 mod imagenet;
 mod imagenet_classes;
+mod token;
 
 use crate::imagenet::elapsed_to_string;
 use crate::imagenet::imagenet_infer;
@@ -46,37 +47,54 @@ fn store_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<Vec<u8>> {
     Err(anyhow::anyhow!("not found"))
 }
 
+struct ImagenetFormData {
+    image_key: String,
+    target: String,
+    file_content: Vec<u8>,
+}
+
+fn imagenet_process_form(mut mp: Multipart<&[u8]>) -> Result<ImagenetFormData, anyhow::Error> {
+    // FORM DATA
+    let mut image_key = "".to_owned();
+    let mut target = "CPU".to_string();
+    let mut file_content: Vec<u8> = vec![];
+
+    while let Some(mut field) = mp.read_entry().unwrap() {
+        match field.headers.name.as_ref().to_owned().as_str() {
+            "image" => {
+                let _bytes_read = field.data.read_to_end(&mut file_content).unwrap();
+                let store = Store::open_default()?;
+                if let Some(filename) = field.headers.filename.clone() {
+                    image_key = filename;
+                    let _ = store.set_json(image_key.clone(), &file_content)?;
+                }
+            }
+            "target" => {
+                target = "".to_string();
+                let _bytes_read = field.data.read_to_string(&mut target).unwrap();
+            }
+            _ => {}
+        }
+    }
+    Ok(ImagenetFormData {
+        image_key,
+        target,
+        file_content,
+    })
+}
+
 fn imagenet_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
     let res = match req.method() {
         &Method::POST => {
             let (parts, body) = req.into_parts();
             let x = parse_content_type(&parts.headers).unwrap();
             let boundary = x.get_param("boundary").unwrap();
-            let mut mp = Multipart::with_body(&*body, boundary.as_str());
-            println!("parts = {parts:?}");
+            let mp = Multipart::with_body(&*body, boundary.as_str());
 
-            // FORM DATA
-            let mut image_key = "".to_owned();
-            let mut target = "CPU".to_string();
-            let mut file_content: Vec<u8> = vec![];
-
-            while let Some(mut field) = mp.read_entry().unwrap() {
-                match field.headers.name.as_ref().to_owned().as_str() {
-                    "image" => {
-                        let _bytes_read = field.data.read_to_end(&mut file_content).unwrap();
-                        let store = Store::open_default()?;
-                        if let Some(filename) = field.headers.filename.clone() {
-                            image_key = filename;
-                            let _ = store.set_json(image_key.clone(), &file_content)?;
-                        }
-                    }
-                    "target" => {
-                        target = "".to_string();
-                        let _bytes_read = field.data.read_to_string(&mut target).unwrap();
-                    }
-                    _ => {}
-                }
-            }
+            let form_data = imagenet_process_form(mp).unwrap();
+            let image_key = form_data.image_key;
+            let target = form_data.target;
+            let file_content = form_data.file_content;
 
             use core::result::Result::Ok;
             let imagenet_name = format!("openvino:imagenet:{}", target);
@@ -136,10 +154,10 @@ fn imagenet_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
         }
         _ => "".to_string(),
     };
-    Ok(format!("<div>{res}</div>"))
+    Ok(imagenet_add_form(format!("<div>{res}</div>")))
 }
 
-fn add_form(mut html_body: String) -> String {
+fn imagenet_add_form(mut html_body: String) -> String {
     let form = r#"
     <!-- make sure the attribute enctype is set to multipart/form-data -->
     <form action="/imagenet" method="post" enctype="multipart/form-data">
@@ -184,22 +202,18 @@ async fn imagenet_demo_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<im
     if path_parts.len() > 1 {
         match path_parts[1].as_str() {
             "imagenet" => {
-                let html_body = add_form(imagenet_handler(req)?);
-                let response = Response::builder()
-                    .header("Foo", "Bar")
-                    .status(200)
-                    .body(html_body)
-                    .build();
+                let html_body = imagenet_handler(req)?;
+                let response = Response::builder().status(200).body(html_body).build();
+                return Ok(response);
+            }
+            "llama" => {
+                let html_body = llama_handler(req)?;
+                let response = Response::builder().status(200).body(html_body).build();
                 return Ok(response);
             }
             "store" => {
-                //println!("CALL STORE");
                 let contents = store_handler(req)?;
-                let response = Response::builder()
-                    .header("Foo", "Bar")
-                    .status(404)
-                    .body(contents)
-                    .build();
+                let response = Response::builder().status(200).body(contents).build();
                 return Ok(response);
             }
             _ => {}
@@ -211,4 +225,87 @@ async fn imagenet_demo_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<im
         .body("404 - Not found".to_owned())
         .build();
     return Ok(response);
+}
+
+fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
+    let res = match req.method() {
+        &Method::POST => {
+            let (parts, body) = req.into_parts();
+            let x = parse_content_type(&parts.headers).unwrap();
+            let boundary = x.get_param("boundary").unwrap();
+            let mp = Multipart::with_body(&*body, boundary.as_str());
+
+            let form_data = llama_process_form(mp).unwrap();
+
+            format!("form data = {form_data:?}")
+        }
+        _ => {
+            "HELLO from Llama handler".to_owned()
+        }
+    };
+    
+    Ok(lamma_add_form(format!("<div>{res}</div>")))
+}
+
+fn lamma_add_form(mut html_body: String) -> String {
+    let form = r#"
+    <!-- make sure the attribute enctype is set to multipart/form-data -->
+    <form action="/llama" method="post" enctype="multipart/form-data">
+        <h2>
+            Enter text to process by llama
+        </h2>
+        <p>
+            <label>Submit text to llama </label><br/>
+            <input type="text" name="promt"/>
+        </p>
+        <p>
+            <label for="target">Choose a inference target:</label>
+            <select name="target" id="target">
+                <option value="CPU">CPU</option>
+                <option value="GPU">GPU</option>
+            </select> 
+        </p>
+        <p>
+        <label for="target">Choose a inference network:</label>
+        <select name="model" id="model">
+            <option value="llama3">llama3</option>
+        </select> 
+        </p>
+        <p>
+            <input type="submit"/>
+        </p>
+    </form>
+    "#;
+    html_body.push_str(form);
+    html_body
+}
+
+#[derive(Debug)]
+struct LlamaFormData {
+    promt: String,
+    target: String,
+}
+
+fn llama_process_form(mut mp: Multipart<&[u8]>) -> Result<LlamaFormData, anyhow::Error> {
+    // FORM DATA
+    let mut promt = "".to_owned();
+    let mut target = "CPU".to_string();
+
+    while let Some(mut field) = mp.read_entry().unwrap() {
+        match field.headers.name.as_ref().to_owned().as_str() {
+            "promt" => {
+                target = "".to_string();
+                let _bytes_read = field.data.read_to_string(&mut promt).unwrap();
+            }            
+            "target" => {
+                target = "".to_string();
+                let _bytes_read = field.data.read_to_string(&mut target).unwrap();
+            }
+            _ => {}
+        }
+    }
+    Ok(LlamaFormData {
+        promt,
+        target,
+    })
 }
