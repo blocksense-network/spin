@@ -26,4 +26,5 @@ mime_guess = "2.0"
 hex = "0.4.3"
 
 rust_tokenizers = "8.1.0"
+
 [workspace]

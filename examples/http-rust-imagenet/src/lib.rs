@@ -1,6 +1,7 @@
 use anyhow::Ok;
 use http::{HeaderMap, HeaderValue, Method};
 use multipart::server::Multipart;
+
 use std::io::Read;
 
 use ml::fermyon::spin::graph::load_by_name;
@@ -18,11 +19,15 @@ mod ml {
 
 mod imagenet;
 mod imagenet_classes;
-mod token;
+mod tokenizer;
+
+//use crate::token::LlamaTokenizer;
 
 use crate::imagenet::elapsed_to_string;
 use crate::imagenet::imagenet_infer;
 use crate::ml::fermyon::spin::graph;
+use crate::tokenizer::LlamaTokenizer;
+
 
 fn parse_content_type(headers: &HeaderMap<HeaderValue>) -> Option<mime::Mime> {
     headers
@@ -227,6 +232,7 @@ async fn imagenet_demo_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<im
     return Ok(response);
 }
 
+
 fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
     let res = match req.method() {
         &Method::POST => {
@@ -236,8 +242,16 @@ fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
             let mp = Multipart::with_body(&*body, boundary.as_str());
 
             let form_data = llama_process_form(mp).unwrap();
+            // DOWNLOAD FROM 
+            // https://huggingface.co/facebook/m2m100_418M/resolve/main/sentencepiece.bpe.model
+            let tokenizer = LlamaTokenizer::new("llama/sentencepiece.bpe.model").unwrap();
+            let vocab_size = tokenizer.vocab_size(false);
+            let token_ids = tokenizer.encode(&form_data.promt, true, true);
+            
 
-            format!("form data = {form_data:?}")
+            
+            let x = tokenizer.decode(&token_ids, false);
+            format!("form data = {form_data:?} vocab_size = {vocab_size} token_ids = {:?} decoded = '{x}'", token_ids)
         }
         _ => {
             "HELLO from Llama handler".to_owned()
@@ -304,6 +318,8 @@ fn llama_process_form(mut mp: Multipart<&[u8]>) -> Result<LlamaFormData, anyhow:
             _ => {}
         }
     }
+
+
     Ok(LlamaFormData {
         promt,
         target,
