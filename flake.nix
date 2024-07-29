@@ -30,9 +30,14 @@
           extensions = ["rust-src" "rust-analyzer"];
           targets = ["wasm32-wasi" "wasm32-unknown-unknown"];
         };
-        openvino = pkgs.openvino.overrideAttrs (oldAttrs: rec {
-          version = "2023.3.0";
-        });
+        openvino =
+          (import (pkgs.fetchFromGitHub {
+            owner = "NixOS";
+            repo = "nixpkgs";
+            rev = "07518c851b0f12351d7709274bbbd4ecc1f089c7";
+            hash = "sha256-cYhDZ3RYLiXAi4LQDGuQjjDDbtP00Wd/Vjal/jWyTuA=";
+          }) {inherit system;})
+          .openvino;
 
         RustToolchain = with fenix.packages.${pkgs.system};
         with latest;
@@ -69,6 +74,7 @@
                 pkgs.stdenv.cc.cc
                 openssl
               ]}
+              export OPENVINO_INSTALL_DIR="${pkgs.lib.makeLibraryPath [openvino]}/..";
             '';
 
             RUST_SRC_PATH = "${rustTarget}/lib/rustlib/src/rust/library";
