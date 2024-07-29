@@ -392,11 +392,10 @@ impl graph::Host for MLHostImpl {
                         }
                     }
                 }
+                return Err(anyhow!("Can't load model '{model_name}', no backend found for {graph_encoding:?}"));        
             }
         }
-        Err(anyhow!(
-            "[graph::Host] fn load_by_name -> model not supported "
-        ))
+        Err(anyhow!("[graph::Host] fn load_by_name -> model not supported, model = {model_name}"))
     }
 }
 

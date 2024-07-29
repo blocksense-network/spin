@@ -183,6 +183,7 @@ wasmtime-wasi = "22.0.0"
 wasmtime-wasi-http = "22.0.0"
 
 spin-componentize = { path = "crates/componentize" }
+openvino = { version = "0.7.2", features = ["runtime-linking",] }
 
 [workspace.lints.clippy]
 # TODO: Remove this once https://github.com/rust-lang/rust-clippy/issues/12281 is resolved

@@ -26,11 +26,16 @@ impl HostComponent for MLHostComponent {
 
     fn build_data(&self) -> Self::Data {
         let mut backends: Vec<Box<dyn BackendInner>> = vec![];
-        if let Ok(openvino) = openvino::Core::new() {
+        match openvino::Core::new() {
+            Ok(openvino) =>  {
             backends.push(Box::new(OpenvinoBackend {
                 openvino,
                 state_dir: self.state_dir.clone(),
-            }));
+            }))
+            }
+            Err(e) => {
+                eprintln!("SetupError when trying to initialize openvino = {e:?}");
+            }
         }
 
         MLHostImpl {

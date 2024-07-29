@@ -14,8 +14,7 @@ spin-core = { path = "../core" }
 spin-world = { path = "../world" }
 table = { path = "../table" }
 
-openvino = { version = "0.7.2", features = ["runtime-linking",] }
-
+openvino = { workspace = true }
 ort = { version = "2.0.0-rc.2", default-features = false, features = [
     "copy-dylibs",
     "download-binaries",
