@@ -1,4 +1,3 @@
-#![feature(proc_macro_byte_character)]
 use heck::*;
 use proc_macro::TokenStream;
 use std::{env, path::PathBuf};

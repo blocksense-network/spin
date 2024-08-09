@@ -134,8 +134,8 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
         match tensor_id {
             TensorId::Index(i) => self
                 .infer_request
-                .set_input_tensor_by_index(i.clone() as usize, &new_tensor)?,
-            TensorId::Name(name) => self.infer_request.set_tensor(&name, &new_tensor)?,
+                .set_input_tensor_by_index(*i as usize, &new_tensor)?,
+            TensorId::Name(name) => self.infer_request.set_tensor(name, &new_tensor)?,
         };
 
         Ok(())
@@ -149,10 +149,8 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
 
     fn get_output(&mut self, tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
         let output_tensor = match tensor_id {
-            TensorId::Index(i) => self
-                .infer_request
-                .get_output_tensor_by_index(i.clone() as usize)?,
-            TensorId::Name(name) => self.infer_request.get_tensor(&name)?,
+            TensorId::Index(i) => self.infer_request.get_output_tensor_by_index(*i as usize)?,
+            TensorId::Name(name) => self.infer_request.get_tensor(name)?,
         };
         let dimensions = output_tensor
             .get_shape()?

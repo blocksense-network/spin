@@ -219,7 +219,7 @@ async fn test_host_component_imagenet_openvino_gpu() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg(not(tarpaulin))]
+// #[cfg(not(tarpaulin))]
 async fn test_panic() {
     let err = run_core_wasi_test(["panic"], |_| {}).await.unwrap_err();
     let trap = err.downcast::<Trap>().expect("trap");
