@@ -19,10 +19,14 @@ mod ml {
 
 mod imagenet;
 mod imagenet_classes;
+mod tokenizer;
+
+//use crate::token::LlamaTokenizer;
 
 use crate::imagenet::elapsed_to_string;
 use crate::imagenet::imagenet_infer;
 use crate::ml::fermyon::spin::graph;
+use crate::tokenizer::LlamaTokenizer;
 
 
 fn parse_content_type(headers: &HeaderMap<HeaderValue>) -> Option<mime::Mime> {
@@ -207,6 +211,11 @@ async fn imagenet_demo_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<im
                 let response = Response::builder().status(200).body(html_body).build();
                 return Ok(response);
             }
+            "llama" => {
+                let html_body = llama_handler(req)?;
+                let response = Response::builder().status(200).body(html_body).build();
+                return Ok(response);
+            }
             "store" => {
                 let contents = store_handler(req)?;
                 let response = Response::builder().status(200).body(contents).build();
@@ -224,4 +233,95 @@ async fn imagenet_demo_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<im
 }
 
 
+fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
+    let res = match req.method() {
+        &Method::POST => {
+            let (parts, body) = req.into_parts();
+            let x = parse_content_type(&parts.headers).unwrap();
+            let boundary = x.get_param("boundary").unwrap();
+            let mp = Multipart::with_body(&*body, boundary.as_str());
 
+            let form_data = llama_process_form(mp).unwrap();
+            // DOWNLOAD FROM 
+            // https://huggingface.co/facebook/m2m100_418M/resolve/main/sentencepiece.bpe.model
+            let tokenizer = LlamaTokenizer::new("llama/sentencepiece.bpe.model").unwrap();
+            let vocab_size = tokenizer.vocab_size(false);
+            let token_ids = tokenizer.encode(&form_data.promt, true, true);
+            
+
+            
+            let x = tokenizer.decode(&token_ids, false);
+            format!("form data = {form_data:?} vocab_size = {vocab_size} token_ids = {:?} decoded = '{x}'", token_ids)
+        }
+        _ => {
+            "HELLO from Llama handler".to_owned()
+        }
+    };
+    
+    Ok(lamma_add_form(format!("<div>{res}</div>")))
+}
+
+fn lamma_add_form(mut html_body: String) -> String {
+    let form = r#"
+    <!-- make sure the attribute enctype is set to multipart/form-data -->
+    <form action="/llama" method="post" enctype="multipart/form-data">
+        <h2>
+            Enter text to process by llama
+        </h2>
+        <p>
+            <label>Submit text to llama </label><br/>
+            <input type="text" name="promt"/>
+        </p>
+        <p>
+            <label for="target">Choose a inference target:</label>
+            <select name="target" id="target">
+                <option value="CPU">CPU</option>
+                <option value="GPU">GPU</option>
+            </select> 
+        </p>
+        <p>
+        <label for="target">Choose a inference network:</label>
+        <select name="model" id="model">
+            <option value="llama3">llama3</option>
+        </select> 
+        </p>
+        <p>
+            <input type="submit"/>
+        </p>
+    </form>
+    "#;
+    html_body.push_str(form);
+    html_body
+}
+
+#[derive(Debug)]
+struct LlamaFormData {
+    promt: String,
+    target: String,
+}
+
+fn llama_process_form(mut mp: Multipart<&[u8]>) -> Result<LlamaFormData, anyhow::Error> {
+    // FORM DATA
+    let mut promt = "".to_owned();
+    let mut target = "CPU".to_string();
+
+    while let Some(mut field) = mp.read_entry().unwrap() {
+        match field.headers.name.as_ref().to_owned().as_str() {
+            "promt" => {
+                target = "".to_string();
+                let _bytes_read = field.data.read_to_string(&mut promt).unwrap();
+            }            
+            "target" => {
+                target = "".to_string();
+                let _bytes_read = field.data.read_to_string(&mut target).unwrap();
+            }
+            _ => {}
+        }
+    }
+
+
+    Ok(LlamaFormData {
+        promt,
+        target,
+    })
+}
