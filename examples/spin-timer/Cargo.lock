@@ -2365,6 +2365,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hex-literal"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
+
+[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6116,6 +6122,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "spin-ml"
+version = "2.7.0-pre0"
+dependencies = [
+ "anyhow",
+ "curl",
+ "hex-literal",
+ "openvino",
+ "sha1 0.10.6",
+ "spin-app",
+ "spin-core",
+ "spin-world",
+ "table",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "spin-outbound-networking"
 version = "2.7.0-pre0"
 dependencies = [
@@ -6233,6 +6256,7 @@ dependencies = [
  "spin-llm-remote-http",
  "spin-loader",
  "spin-manifest",
+ "spin-ml",
  "spin-outbound-networking",
  "spin-sqlite",
  "spin-sqlite-inproc",

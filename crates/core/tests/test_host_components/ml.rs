@@ -1,21 +1,21 @@
+#[allow(clippy::module_inception)]
 pub mod ml {
     wasmtime::component::bindgen!("ml" in "tests/core-wasi-test/wit");
 
     use spin_core::HostComponent;
 
     use anyhow::{anyhow, Context};
-    use test::test::errors;
-    use test::test::errors::HostError;
-    use test::test::graph;
-    use test::test::inference;
-    use test::test::tensor;
+    use test::test as ml_wit;
 
-    use test::test::errors::ErrorCode;
-    use test::test::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
-    use test::test::inference::GraphExecutionContext;
+    use ml_wit::{errors, graph, inference, tensor};
+
+    use ml_wit::errors::{ErrorCode, HostError};
+    use ml_wit::graph::{ExecutionTarget, Graph, GraphBuilder, GraphEncoding};
+    use ml_wit::inference::GraphExecutionContext;
+
     use wasmtime::component::Resource;
 
-    use openvino::{Layout, Precision, TensorDesc};
+    use openvino::{InferenceError, Layout, Precision, TensorDesc};
 
     #[derive(Clone)]
     pub struct MLHostComponent;
@@ -90,43 +90,48 @@ pub mod ml {
                 openvino.replace(openvino::Core::new(None)?);
             }
             if openvino.is_some() {
-                let mut cnn_network = openvino
+                let engine = openvino
                     .as_mut()
-                    .context("Can't create openvino graph without backend")?
-                    .read_network_from_buffer(&graph.xml, &graph.weights)?;
+                    .context("Can't create openvino graph without backend")?;
+                let mut cnn_network =
+                    engine.read_network_from_buffer(&graph.xml, &graph.weights)?;
 
-                // Construct OpenVINO graph structures: `cnn_network` contains the graph
-                // structure, `exec_network` can perform inference.
-                //let core = self
-                //    .0
-                //    .as_mut()
-                //    .expect("openvino::Core was previously constructed");
-                //let mut cnn_network = core.read_network_from_buffer(&xml, &weights)?;
-
-                // TODO: this is a temporary workaround. We need a more elegant way to
-                // specify the layout in the long run. However, without this newer
-                // versions of OpenVINO will fail due to parameter mismatch.
                 for i in 0..cnn_network.get_inputs_len().unwrap() {
                     let name = cnn_network.get_input_name(i)?;
                     cnn_network.set_input_layout(&name, Layout::NHWC)?;
                 }
+                let device = map_execution_target_to_string(graph.target);
 
-                let mut exec_network = openvino
-                    .as_mut()
-                    .expect("")
-                    .load_network(&cnn_network, map_execution_target_to_string(graph.target))?;
-                let infer_request = exec_network
-                    .create_infer_request()
-                    .context("Can't create InferRequest")?;
-                let graph_execution_context = GraphExecutionContextInternalData {
-                    cnn_network,
-                    //executable_network: Mutex::new(exec_network),
-                    infer_request,
-                };
-                return executions
-                    .push(graph_execution_context)
-                    .map(Resource::<inference::GraphExecutionContext>::new_own)
-                    .map_err(|_| anyhow!("Can't store execution context"));
+                match engine.load_network(&cnn_network, device) {
+                    Ok(mut exec_network) => {
+                        let infer_request = exec_network
+                            .create_infer_request()
+                            .context("Can't create InferRequest")?;
+                        let graph_execution_context = GraphExecutionContextInternalData {
+                            cnn_network,
+                            //executable_network: Mutex::new(exec_network),
+                            infer_request,
+                        };
+                        return executions
+                            .push(graph_execution_context)
+                            .map(Resource::<inference::GraphExecutionContext>::new_own)
+                            .map_err(|_| anyhow!("Can't store execution context"));
+                    }
+                    Err(e) => {
+                        return Err(match e {
+                            InferenceError::GeneralError => {
+                                // Usually happends when GPU is not availabale
+                                // if e == IntoIterator::GeneralError
+                                // println!("Inference Error = {e}");
+
+                                anyhow!("Openvino General Error - Usually happends when GPU is not availabale")
+                            }
+                            _ => {
+                                anyhow!("Openvino Inferenace Error - can't load network")
+                            }
+                        });
+                    }
+                }
             }
             Err(anyhow!("Can't create openvino backend"))
         }

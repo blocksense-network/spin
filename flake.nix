@@ -50,6 +50,7 @@
                 openssl
                 pkg-config
                 rustTarget
+                onnxruntime
               ]
               ++ lib.optionals stdenv.isDarwin [
                 darwin.apple_sdk.frameworks.Accelerate

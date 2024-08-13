@@ -19,6 +19,10 @@ fn main() {
     }
 
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=src/*.rs");
+    println!("cargo:rerun-if-changed=tests/integration_test.rs");
+    println!("cargo:rerun-if-changed=tests/core-wasi-test/src/*.rs");
+    println!("cargo:rerun-if-changed=tests/test_host_components/src/*.rs");
 }
 
 fn try_download(url: &str, filename: &PathBuf) -> Result<(), anyhow::Error> {

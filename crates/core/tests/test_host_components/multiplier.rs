@@ -4,6 +4,7 @@ use spin_core::HostComponent;
 #[derive(Clone)]
 pub struct MultiplierHostComponent;
 
+#[allow(clippy::module_inception)]
 mod multiplier {
     wasmtime::component::bindgen!("multiplier" in "tests/core-wasi-test/wit");
 }
