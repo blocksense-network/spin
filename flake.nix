@@ -64,6 +64,7 @@
                 pkgs.stdenv.cc.cc
                 openssl
               ]}
+              export OPENVINO_INSTALL_DIR="${pkgs.lib.makeLibraryPath [openvino]}/..";
             '';
 
             RUST_SRC_PATH = "${rustTarget}/lib/rustlib/src/rust/library";
