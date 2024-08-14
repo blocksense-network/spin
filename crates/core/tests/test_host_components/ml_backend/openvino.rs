@@ -4,11 +4,11 @@ use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
 use ml_wit::tensor;
 use ml_wit::tensor::TensorType;
 
-use crate::test_host_components::backend::{
-    BackendExecutionContext, BackendGraph, BackendInner, TensorId,
-};
 use crate::test_host_components::host_impl::{
     ExecutionContext, GraphInternalData, TensorInternalData,
+};
+use crate::test_host_components::ml_backend::{
+    BackendExecutionContext, BackendGraph, BackendInner, TensorId,
 };
 
 use openvino::{DeviceType, ElementType, Shape, Tensor as OvTensor};

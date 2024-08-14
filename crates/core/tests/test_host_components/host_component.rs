@@ -1,11 +1,11 @@
 use spin_core::HostComponent;
 
-use crate::test_host_components::backend;
 use crate::test_host_components::host_impl::MLHostImpl;
+use crate::test_host_components::ml_backend;
 use crate::test_host_components::ml_wit::test::test as ml_wit;
 
-use backend::openvino::OpenvinoBackend;
-use backend::BackendInner;
+use ml_backend::openvino::OpenvinoBackend;
+use ml_backend::BackendInner;
 
 pub struct MLHostComponent {}
 

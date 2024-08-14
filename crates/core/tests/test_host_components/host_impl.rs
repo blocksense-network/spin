@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context};
 
-use crate::test_host_components::backend;
+use crate::test_host_components::ml_backend;
 use crate::test_host_components::ml_wit::test::test as ml_wit;
 
 use ml_wit::errors::ErrorCode;
@@ -10,7 +10,7 @@ use ml_wit::{errors, graph, inference, tensor};
 
 use spin_core::wasmtime::component::Resource;
 
-use backend::{BackendExecutionContext, BackendGraph, BackendInner, TensorId};
+use ml_backend::{BackendExecutionContext, BackendGraph, BackendInner, TensorId};
 
 pub struct GraphInternalData(pub Box<dyn BackendGraph>);
 

@@ -1,4 +1,4 @@
-pub mod backend;
+pub mod ml_backend;
 
 //#[cfg(not(feature = "openvino"))]
 //pub mod empty_ml;
