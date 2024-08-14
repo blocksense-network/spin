@@ -1,5 +1,5 @@
 use crate::ml::test::test::{graph, inference, tensor, errors};
-use image2tensor::convert_image_to_tensor_bytes;
+use image2tensor::convert_image_bytes_to_tensor_bytes;
 
 use crate::imagenet_classes;
 use crate::Path;
@@ -38,6 +38,43 @@ fn map_string_to_execution_target(target: &str) -> Result<graph::ExecutionTarget
         "TPU" => Ok(graph::ExecutionTarget::Tpu),
         _ => Err(format!("Unknown execution targer = {}", target)),
     }
+}
+
+
+pub fn preprocess_image_for_imagenet(
+    image_file_data: &[u8],
+    tensor_dimensions:&[u32],
+) -> Vec<u8> {
+    let tensor_data = convert_image_bytes_to_tensor_bytes(
+        image_file_data,
+        tensor_dimensions[2],
+        tensor_dimensions[3],
+        image2tensor::TensorType::F32,
+        image2tensor::ColorOrder::BGR,
+    )
+    .unwrap();
+
+    let mut new_tensor_data = Vec::<f32>::new();
+
+    let num_colors = tensor_dimensions[1] as usize;
+    let height = tensor_dimensions[2] as usize;
+    let width = tensor_dimensions[3] as usize;
+
+    for c in 0..num_colors {
+        for y in 0..height {
+            for x in 0..width {
+                let offset = ((y * width + x) * 3 + c) * 4;
+                let v = f32::from_le_bytes(
+                    tensor_data[offset..offset + 4]
+                        .try_into()
+                        .expect("Needed 4 bytes for a float"),
+                );
+                new_tensor_data.push(v);
+            }
+        }
+    }
+    let (_head, body, _tail) = unsafe { new_tensor_data.align_to::<u8>() };
+    body.to_vec()
 }
 
 pub fn imagenet_openvino_test(
@@ -95,14 +132,8 @@ pub fn imagenet_openvino_test(
     };
 
     let tensor_dimensions: Vec<u32> = vec![1, 3, 224, 224];
-    let tensor_data = convert_image_to_tensor_bytes(
-        &image_file, //"images/0.jpg",
-        tensor_dimensions[2],
-        tensor_dimensions[3],
-        image2tensor::TensorType::F32,
-        image2tensor::ColorOrder::BGR,
-    )
-    .unwrap();
+    let image_file_bytes = std::fs::read(&image_file).unwrap();
+    let tensor_data = preprocess_image_for_imagenet(&image_file_bytes, &tensor_dimensions);
 
     let tensor_id = {
         let start_for_elapsed_macro = std::time::Instant::now();

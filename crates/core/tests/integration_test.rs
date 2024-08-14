@@ -9,7 +9,7 @@ mod test_host_components;
 #[cfg(not(feature = "openvino"))]
 use crate::test_host_components::empty_ml::ml::MLHostComponent;
 #[cfg(feature = "openvino")]
-use crate::test_host_components::ml::ml::MLHostComponent;
+use crate::test_host_components::host_component::MLHostComponent;
 
 use crate::test_host_components::multiplier::{Multiplier, MultiplierHostComponent};
 
@@ -215,7 +215,7 @@ async fn test_host_component_imagenet_openvino_gpu() {
     )
     .await
     .unwrap();
-    assert_eq!(stdout, "0.96 -> mountain bike, all-terrain bike, off-roader\n0.01 -> bicycle-built-for-two, tandem bicycle, tandem\n0.00 -> alp");
+    assert_eq!(stdout, "0.97 -> mountain bike, all-terrain bike, off-roader\n0.01 -> bicycle-built-for-two, tandem bicycle, tandem\n0.00 -> alp");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -238,7 +238,7 @@ fn test_engine() -> Engine<()> {
     let mut builder = Engine::builder(&test_config()).unwrap();
     builder.add_host_component(MultiplierHostComponent).unwrap();
 
-    builder.add_host_component(MLHostComponent).unwrap();
+    builder.add_host_component(MLHostComponent {}).unwrap();
 
     builder
         .link_import(|l, _| wasmtime_wasi::add_to_linker_async(l))
