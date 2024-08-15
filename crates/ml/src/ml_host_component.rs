@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use spin_world::v2 as ml_wit;
 
-use crate::{backend::BackendInner, host_impl::MLHostImpl};
+use crate::{backend::BackendInner, ml_host_impl::MLHostImpl};
 
 use spin_app::{AppComponent, DynamicHostComponent};
 use spin_core::HostComponent;

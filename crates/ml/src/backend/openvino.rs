@@ -13,7 +13,7 @@ use openvino::{DeviceType, ElementType, Shape, Tensor as OvTensor};
 
 use std::path::PathBuf;
 
-use crate::host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
+use crate::ml_host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
 use anyhow::anyhow;
 use std::sync::{Arc, Mutex};
 
