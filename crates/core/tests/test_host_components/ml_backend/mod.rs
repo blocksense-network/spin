@@ -1,12 +1,11 @@
-//#[cfg(feature = "openvino")]
-pub mod openvino;
-
 use crate::test_host_components::host_impl;
 use crate::test_host_components::ml_wit::test::test as ml_wit;
 
+use host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
 use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
 
-use host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
+#[cfg(feature = "openvino")]
+pub mod openvino;
 
 /// A [Backend] contains the necessary state to load [Graph]s.
 pub trait BackendInner: Send + Sync {

@@ -40,6 +40,6 @@ curl = { version = "^0.4", features = ["rustls"] }
 anyhow = "^1"
 
 [features]
-default = ["openvino", "has_gpu"]
+default = ["has_gpu", "openvino"]
 openvino = ["dep:openvino"]
 has_gpu = []

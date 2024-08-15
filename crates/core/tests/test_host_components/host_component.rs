@@ -3,9 +3,10 @@ use spin_core::HostComponent;
 use crate::test_host_components::host_impl::MLHostImpl;
 use crate::test_host_components::ml_backend;
 use crate::test_host_components::ml_wit::test::test as ml_wit;
-
-use ml_backend::openvino::OpenvinoBackend;
 use ml_backend::BackendInner;
+
+#[cfg(feature = "openvino")]
+use ml_backend::openvino::OpenvinoBackend;
 
 pub struct MLHostComponent {}
 
@@ -23,10 +24,12 @@ impl HostComponent for MLHostComponent {
     }
 
     fn build_data(&self) -> Self::Data {
-        let mut backends: Vec<Box<dyn BackendInner>> = vec![];
-        if let Ok(openvino) = openvino::Core::new() {
-            backends.push(Box::new(OpenvinoBackend { openvino }));
-        }
+        let backends: Vec<Box<dyn BackendInner>> = vec![
+            #[cfg(feature = "openvino")]
+            Box::new(OpenvinoBackend {
+                openvino: openvino::Core::new().unwrap(),
+            }),
+        ];
 
         MLHostImpl {
             backends,

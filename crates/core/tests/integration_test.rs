@@ -6,11 +6,7 @@ use std::{
 
 mod test_host_components;
 
-#[cfg(not(feature = "openvino"))]
-use crate::test_host_components::empty_ml::ml::MLHostComponent;
-#[cfg(feature = "openvino")]
 use crate::test_host_components::host_component::MLHostComponent;
-
 use crate::test_host_components::multiplier::{Multiplier, MultiplierHostComponent};
 
 use anyhow::Context;
