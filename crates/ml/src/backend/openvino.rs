@@ -1,9 +1,9 @@
 use spin_world::v2 as ml_wit;
 
 use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
+use ml_wit::tensor;
 use ml_wit::tensor::TensorType;
 
-use crate::backend::tensor;
 use crate::backend::BackendGraph;
 
 use super::{BackendExecutionContext, BackendInner, TensorId};

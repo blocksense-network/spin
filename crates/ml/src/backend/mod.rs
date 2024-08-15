@@ -1,14 +1,11 @@
-//#[cfg(feature = "openvino")]
-pub mod openvino;
-//pub mod onnx;
-
 use spin_world::v2 as ml_wit;
 
 use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
-//use ml_wit::inference::GraphExecutionContext;
-use ml_wit::tensor;
 
 use crate::host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
+
+#[cfg(feature = "openvino")]
+pub mod openvino;
 
 /// A [Backend] contains the necessary state to load [Graph]s.
 pub trait BackendInner: Send + Sync {
