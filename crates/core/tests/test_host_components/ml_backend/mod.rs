@@ -1,7 +1,7 @@
-use crate::test_host_components::host_impl;
+use crate::test_host_components::ml_host_impl;
 use crate::test_host_components::ml_wit::test::test as ml_wit;
 
-use host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
+use ml_host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
 use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
 
 #[cfg(feature = "openvino")]

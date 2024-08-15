@@ -3,7 +3,7 @@ pub mod ml_wit {
     wasmtime::component::bindgen!("ml" in "tests/core-wasi-test/wit");
 }
 
-pub mod host_component;
-pub mod host_impl;
+pub mod ml_host_component;
+pub mod ml_host_impl;
 
 pub mod multiplier;

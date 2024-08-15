@@ -6,7 +6,7 @@ use std::{
 
 mod test_host_components;
 
-use crate::test_host_components::host_component::MLHostComponent;
+use crate::test_host_components::ml_host_component::MLHostComponent;
 use crate::test_host_components::multiplier::{Multiplier, MultiplierHostComponent};
 
 use anyhow::Context;
