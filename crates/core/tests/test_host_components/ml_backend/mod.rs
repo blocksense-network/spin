@@ -1,8 +1,8 @@
-use spin_world::v2 as ml_wit;
+use crate::test_host_components::ml_host_impl;
+use crate::test_host_components::ml_wit::test::test as ml_wit;
 
+use ml_host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
 use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
-
-use crate::ml_host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
 
 #[cfg(feature = "openvino")]
 pub mod openvino;
@@ -43,37 +43,19 @@ pub trait BackendExecutionContext: Send + Sync {
 #[derive(Debug)]
 pub enum TensorId {
     Index(u32),
-    Name(String),
+    //Name(String),
 }
 impl TensorId {
     pub fn index(&self) -> Option<u32> {
         match self {
             TensorId::Index(i) => Some(*i),
-            TensorId::Name(_) => None,
+            //TensorId::Name(_) => None,
         }
     }
     pub fn name(&self) -> Option<&str> {
         match self {
             TensorId::Index(_) => None,
-            TensorId::Name(n) => Some(n),
+            //TensorId::Name(n) => Some(n),
         }
     }
 }
-
-/*
-/// Errors returned by a backend; [BackendError::BackendAccess] is a catch-all
-/// for failures interacting with the ML library.
-#[derive(Debug, Error)]
-pub enum BackendError {
-    #[error("Failed while accessing backend")]
-    BackendAccess(#[from] anyhow::Error),
-    #[error("Failed while accessing guest module")]
-    GuestAccess(#[from] GuestError),
-    #[error("The backend expects {0} buffers, passed {1}")]
-    InvalidNumberOfBuilders(usize, usize),
-    #[error("Not enough memory to copy tensor data of size: {0}")]
-    NotEnoughMemory(usize),
-    #[error("Unsupported tensor type: {0}")]
-    UnsupportedTensorType(String),
-}
-*/

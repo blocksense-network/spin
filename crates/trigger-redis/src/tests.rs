@@ -1,7 +1,6 @@
 use super::*;
-use anyhow::Result;
 use redis::{Msg, Value};
-use spin_testing::{tokio, RedisTestConfig};
+use spin_testing::RedisTestConfig;
 
 fn create_trigger_event(channel: &str, payload: &str) -> redis::Msg {
     Msg::from_value(&redis::Value::Bulk(vec![

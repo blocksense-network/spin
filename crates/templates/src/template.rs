@@ -230,6 +230,8 @@ impl Template {
     /// A human-readable description of the template, provided by the
     /// template author, or an empty string if no description was
     /// provided.
+    #[allow(unknown_lints)]
+    #[allow(clippy::manual_unwrap_or_default)]
     pub fn description_or_empty(&self) -> &str {
         match &self.description {
             Some(s) => s,

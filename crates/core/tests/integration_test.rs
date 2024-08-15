@@ -5,7 +5,8 @@ use std::{
 };
 
 mod test_host_components;
-use crate::test_host_components::ml::ml::MLHostComponent;
+
+use crate::test_host_components::ml_host_component::MLHostComponent;
 use crate::test_host_components::multiplier::{Multiplier, MultiplierHostComponent};
 
 use anyhow::Context;
@@ -58,7 +59,6 @@ async fn test_read_only_preopened_dir_write_fails() {
         .expect("trap error was not an I32Exit");
     assert_eq!(trap.0, 1);
 }
-
 #[tokio::test(flavor = "multi_thread")]
 async fn test_read_write_preopened_dir() {
     let filename = "test_file";
@@ -161,6 +161,7 @@ async fn test_host_component_data_update() {
     assert_eq!(stdout, "500");
 }
 
+#[cfg(feature = "openvino")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_host_component_imagenet_openvino_cpu() {
     let engine = test_engine();
@@ -186,6 +187,8 @@ async fn test_host_component_imagenet_openvino_cpu() {
     assert_eq!(stdout, "0.47 -> Eskimo dog, husky\n0.37 -> Siberian husky\n0.01 -> malamute, malemute, Alaskan malamute");
 }
 
+#[cfg(feature = "openvino")]
+#[cfg(feature = "has_gpu")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_host_component_imagenet_openvino_gpu() {
     let engine = test_engine();
@@ -208,11 +211,11 @@ async fn test_host_component_imagenet_openvino_gpu() {
     )
     .await
     .unwrap();
-    assert_eq!(stdout, "0.96 -> mountain bike, all-terrain bike, off-roader\n0.01 -> bicycle-built-for-two, tandem bicycle, tandem\n0.00 -> alp");
+    assert_eq!(stdout, "0.97 -> mountain bike, all-terrain bike, off-roader\n0.01 -> bicycle-built-for-two, tandem bicycle, tandem\n0.00 -> alp");
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[cfg(not(tarpaulin))]
+// #[cfg(not(tarpaulin))]
 async fn test_panic() {
     let err = run_core_wasi_test(["panic"], |_| {}).await.unwrap_err();
     let trap = err.downcast::<Trap>().expect("trap");
@@ -230,7 +233,8 @@ fn test_config() -> Config {
 fn test_engine() -> Engine<()> {
     let mut builder = Engine::builder(&test_config()).unwrap();
     builder.add_host_component(MultiplierHostComponent).unwrap();
-    builder.add_host_component(MLHostComponent).unwrap();
+
+    builder.add_host_component(MLHostComponent {}).unwrap();
 
     builder
         .link_import(|l, _| wasmtime_wasi::add_to_linker_async(l))

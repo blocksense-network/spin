@@ -1,12 +1,15 @@
 use std::path::PathBuf;
 
-use spin_app::DynamicHostComponent;
-use spin_core::HostComponent;
 use spin_world::v2 as ml_wit;
 
+use crate::{backend::BackendInner, ml_host_impl::MLHostImpl};
+
+use spin_app::{AppComponent, DynamicHostComponent};
+use spin_core::HostComponent;
+
+#[cfg(feature = "openvino")]
 use crate::backend::openvino::OpenvinoBackend;
-use crate::{backend::BackendInner, host_impl::MLHostImpl};
-//#[derive(Clone)]
+
 pub struct MLHostComponent {
     pub state_dir: Option<PathBuf>,
 }
@@ -25,13 +28,13 @@ impl HostComponent for MLHostComponent {
     }
 
     fn build_data(&self) -> Self::Data {
-        let mut backends: Vec<Box<dyn BackendInner>> = vec![];
-        if let Ok(openvino) = openvino::Core::new() {
-            backends.push(Box::new(OpenvinoBackend {
-                openvino,
+        let backends: Vec<Box<dyn BackendInner>> = vec![
+            #[cfg(feature = "openvino")]
+            Box::new(OpenvinoBackend {
+                openvino: openvino::Core::new().unwrap(),
                 state_dir: self.state_dir.clone(),
-            }));
-        }
+            }),
+        ];
 
         MLHostImpl {
             state_dir: self.state_dir.clone(),
@@ -42,11 +45,7 @@ impl HostComponent for MLHostComponent {
 }
 
 impl DynamicHostComponent for MLHostComponent {
-    fn update_data(
-        &self,
-        _data: &mut Self::Data,
-        _component: &spin_app::AppComponent,
-    ) -> anyhow::Result<()> {
+    fn update_data(&self, _data: &mut Self::Data, _component: &AppComponent) -> anyhow::Result<()> {
         /*let hosts = component
             .get_metadata(ALLOWED_HOSTS_KEY)?
             .unwrap_or_default();

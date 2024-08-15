@@ -754,8 +754,6 @@ enum NotFoundRouteKind {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-
     use super::*;
 
     #[test]

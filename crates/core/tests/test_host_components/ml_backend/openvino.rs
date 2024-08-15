@@ -1,25 +1,23 @@
-use spin_world::v2 as ml_wit;
+use crate::test_host_components::ml_wit::test::test as ml_wit;
 
 use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
 use ml_wit::tensor;
 use ml_wit::tensor::TensorType;
 
-use crate::backend::BackendGraph;
+use crate::test_host_components::ml_backend::{
+    BackendExecutionContext, BackendGraph, BackendInner, TensorId,
+};
+use crate::test_host_components::ml_host_impl::{
+    ExecutionContext, GraphInternalData, TensorInternalData,
+};
 
-use super::{BackendExecutionContext, BackendInner, TensorId};
-
-use crate::imagenet_download::{imagenet_check_models, imagenet_download, OpenvinoModel};
 use openvino::{DeviceType, ElementType, Shape, Tensor as OvTensor};
 
-use std::path::PathBuf;
-
-use crate::ml_host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
 use anyhow::anyhow;
 use std::sync::{Arc, Mutex};
 
 pub struct OpenvinoBackend {
     pub openvino: openvino::Core,
-    pub state_dir: Option<PathBuf>,
 }
 
 struct OpenvinoGraph(Arc<Mutex<openvino::CompiledModel>>);
@@ -74,23 +72,7 @@ impl BackendInner for OpenvinoBackend {
         )))))
     }
 
-    fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error> {
-        let parts: Vec<_> = model_name.split(':').map(|x| x.to_string()).collect();
-        if parts.len() == 3 {
-            if let Some(target) = map_string_to_execution_target(&parts[2]) {
-                let model_name = &parts[1];
-                if model_name == "imagenet" {
-                    let model = self.imagenet_builders()?;
-                    let builders = vec![model.xml, model.weights];
-                    return self.load(
-                        builders,
-                        target,
-                        GraphEncoding::Openvino,
-                        Some(model_name.clone()),
-                    );
-                }
-            }
-        }
+    fn load_by_name(&mut self, _model_name: String) -> Result<GraphInternalData, anyhow::Error> {
         Err(anyhow!("not implemented"))
     }
 }
@@ -135,7 +117,7 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
             TensorId::Index(i) => self
                 .infer_request
                 .set_input_tensor_by_index(*i as usize, &new_tensor)?,
-            TensorId::Name(name) => self.infer_request.set_tensor(name, &new_tensor)?,
+            //TensorId::Name(name) => self.infer_request.set_tensor(name, &new_tensor)?,
         };
 
         Ok(())
@@ -150,7 +132,7 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
     fn get_output(&mut self, tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
         let output_tensor = match tensor_id {
             TensorId::Index(i) => self.infer_request.get_output_tensor_by_index(*i as usize)?,
-            TensorId::Name(name) => self.infer_request.get_tensor(name)?,
+            //TensorId::Name(name) => self.infer_request.get_tensor(name)?,
         };
         let dimensions = output_tensor
             .get_shape()?
@@ -170,24 +152,6 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
     }
 }
 
-impl OpenvinoBackend {
-    fn imagenet_builders(&mut self) -> Result<OpenvinoModel, anyhow::Error> {
-        if let Some(dir) = &self.state_dir {
-            match imagenet_check_models(dir) {
-                Ok(model) => Ok(model),
-                Err(_) => {
-                    imagenet_download(dir)?;
-                    Ok(imagenet_check_models(dir).map_err(|e| anyhow!("{:?}", e))?)
-                }
-            }
-        } else {
-            Err(anyhow!(
-                "state_dir is not set, therefore there is no place to download models"
-            ))
-        }
-    }
-}
-
 /// Return the execution target string expected by OpenVINO from the
 /// `ExecutionTarget` enum provided by wasi-nn.
 fn map_execution_target_to_string(target: ExecutionTarget) -> DeviceType<'static> {
@@ -197,17 +161,6 @@ fn map_execution_target_to_string(target: ExecutionTarget) -> DeviceType<'static
         ExecutionTarget::Tpu => {
             unimplemented!("OpenVINO does not support TPU execution targets")
         }
-    }
-}
-
-/// Return the execution target string expected by OpenVINO from the
-/// `ExecutionTarget` enum provided by wasi-nn.
-fn map_string_to_execution_target(target: &str) -> Option<ExecutionTarget> {
-    match target {
-        "CPU" => Some(ExecutionTarget::Cpu),
-        "GPU" => Some(ExecutionTarget::Gpu),
-        "TPU" => Some(ExecutionTarget::Tpu),
-        _ => None,
     }
 }
 
