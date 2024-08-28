@@ -29,10 +29,11 @@ pub struct  RustformersLLMGraph {
     model: Arc<dyn llm::Model>, 
 }
 
-pub struct  LLMExecutionContext {
+pub struct LLMExecutionContext {
     model:  Arc<dyn llm::Model>, 
     inference_session: InferenceSession,
-    output_request: llm::OutputRequest
+    output_request: llm::OutputRequest,
+    query_token_ids: Vec<u32>, 
 }
 
 impl BackendInner for RustformersLLMBackend {
@@ -84,6 +85,7 @@ impl BackendGraph for RustformersLLMGraph {
             model: self.model.clone(),
             inference_session,
             output_request,
+            query_token_ids: Default::default(),
         })))
     }
     
@@ -100,15 +102,40 @@ impl BackendExecutionContext for LLMExecutionContext {
     ) -> Result<(), anyhow::Error> {
         //self.
         // Construct the tensor.
-
+        //let d = tensor_data.data;
+        let query = tensor_data.data;
+        let vocab = self.model.tokenizer();
+        let beginning_of_sentence = true;
+        self.query_token_ids = vocab
+            .tokenize(query, beginning_of_sentence)
+            .unwrap()
+            .iter()
+            .map(|(_, tok)| *tok)
+            .collect::<Vec<_>>();
+        Ok(())
     }
 
     fn compute(&mut self) -> Result<(), anyhow::Error> {
-        self.model.evaluate(&mut self.inference_session, &query_token_ids, &mut self.output_request);
+        self.model.evaluate(&mut self.inference_session, &self.query_token_ids, &mut self.output_request);
         Ok(())
-
     }
-    fn get_output(&mut self, tensor_id: &TensorId) -> Result<crate::ml_host_impl::TensorInternalData, anyhow::Error> {
-        
+
+    fn get_output(&mut self, _tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
+        if let Some(tensor_data_f32) = &self.output_request.embeddings {
+        //let tensor_data_f32: Vec<f32> = self.output_request.embeddings();
+            let tensor_data = tensor_data_f32.clone()
+                .into_iter()
+                .flat_map(|x| f32::to_le_bytes(x).to_vec().into_iter())
+                .collect();
+            let tensor_type = TensorType::Fp32;
+            let tensor_dimensions: Vec<u32> = vec![tensor_data_f32.len() as u32];
+            Ok(TensorInternalData{
+                tensor_data,
+                tensor_dimensions,
+                tensor_type,
+            })
+        } else {
+            Err(anyhow!("missing embeddings in this model"))
+        }
     }
 }
