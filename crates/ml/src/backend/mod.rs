@@ -7,6 +7,8 @@ use crate::ml_host_impl::{ExecutionContext, GraphInternalData, TensorInternalDat
 #[cfg(feature = "openvino")]
 pub mod openvino;
 
+pub mod llm;
+
 /// A [Backend] contains the necessary state to load [Graph]s.
 pub trait BackendInner: Send + Sync {
     fn encoding(&self) -> GraphEncoding;

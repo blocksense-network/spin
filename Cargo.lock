@@ -7880,6 +7880,7 @@ dependencies = [
  "anyhow",
  "curl",
  "hex-literal",
+ "llm",
  "openvino",
  "sha1 0.10.6",
  "spin-app",

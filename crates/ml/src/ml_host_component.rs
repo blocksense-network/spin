@@ -10,6 +10,8 @@ use spin_core::HostComponent;
 #[cfg(feature = "openvino")]
 use crate::backend::openvino::OpenvinoBackend;
 
+use crate::backend::llm::RustformersLLMBackend;
+
 pub struct MLHostComponent {
     pub state_dir: Option<PathBuf>,
 }
@@ -32,6 +34,9 @@ impl HostComponent for MLHostComponent {
             #[cfg(feature = "openvino")]
             Box::new(OpenvinoBackend {
                 openvino: openvino::Core::new().unwrap(),
+                state_dir: self.state_dir.clone(),
+            }),
+            Box::new(RustformersLLMBackend {
                 state_dir: self.state_dir.clone(),
             }),
         ];

@@ -22,6 +22,11 @@ hex-literal = "^0.4"
 
 tracing = { workspace = true }
 
+llm = { git = "https://github.com/rustformers/llm", rev = "2f6ffd4435799ceaa1d1bcb5a8790e5b3e0c5663", features = [
+    "tokenizers-remote",
+    "llama",
+], default-features = false }
+
 [features]
 default = ["openvino"]
 openvino = ["dep:openvino"]
