@@ -21,7 +21,7 @@ mod llama;
 
 
 use crate::ml::fermyon::spin::graph;
-use crate::llama::llama_infer;
+use crate::llama::llama_embeddings;
 
 fn parse_content_type(headers: &HeaderMap<HeaderValue>) -> Option<mime::Mime> {
     headers
@@ -69,12 +69,12 @@ fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
             let form_data = llama_process_form(mp).unwrap();
     
             use core::result::Result::Ok;
-            let imagenet_name = format!("llm:{}:{}", form_data.model, form_data.target);
+            let model_name = format!("llm:{}", form_data.model);
 
-            match load_by_name(&imagenet_name) {
+            match load_by_name(&model_name) {
                 Ok(llama_graph) => match graph::Graph::init_execution_context(&llama_graph) {
                     Ok(context) => {
-                        llama_infer(&context, &form_data.promt).unwrap()
+                        llama_embeddings(&context, &form_data.promt).unwrap()
                     }
                     Err(err) => err.data(),
                 },

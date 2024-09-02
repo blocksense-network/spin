@@ -48,6 +48,17 @@ pub enum TensorId {
     Name(String),
 }
 impl TensorId {
+
+    pub fn new(input_name: &String) -> Self {
+        match input_name.parse::<u32>() {
+            Ok(index) => {
+                TensorId::Index(index)
+            }
+            Err(e) => {
+                TensorId::Name(input_name.to_string())
+            }
+        }
+    }
     pub fn index(&self) -> Option<u32> {
         match self {
             TensorId::Index(i) => Some(*i),

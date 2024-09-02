@@ -18,6 +18,8 @@ use crate::ml_host_impl::TensorInternalData;
 use std::sync::Mutex;
 
 use anyhow::{anyhow, Ok};
+use sha1::{Digest, Sha1};
+
 
 
 
@@ -38,7 +40,7 @@ pub struct LLMExecutionContext {
 
 impl BackendInner for RustformersLLMBackend {
     fn encoding(&self) -> GraphEncoding {
-        GraphEncoding::Openvino
+        GraphEncoding::Ggml
     }
 
     fn load(
@@ -58,6 +60,14 @@ impl BackendInner for RustformersLLMBackend {
         let model_architecture = llm::ModelArchitecture::Llama;
         let tokenizer_source = llm::TokenizerSource::Embedded;
         let model_path = self.state_dir.clone().unwrap().join("models").join("open_llama_3b-f16.bin");
+
+        let file_data = std::fs::read(&model_path).unwrap();
+        let file_data_size = file_data.len();
+        let mut hasher = Sha1::new();
+        hasher.update(file_data);
+        let sha1_hash = hasher.finalize();
+        println!("{model_path:?} hash = {sha1_hash:x} size = {file_data_size}");
+
         let model = llm::load_dynamic(
             Some(model_architecture),
             &model_path,
@@ -79,8 +89,7 @@ impl BackendInner for RustformersLLMBackend {
 impl BackendGraph for RustformersLLMGraph {
     fn init_execution_context(&mut self) -> Result<ExecutionContext, anyhow::Error> {
         let inference_session = self.model.as_ref().start_session(InferenceSessionConfig::default());
-        let embeddings = vec![];
-        let output_request = OutputRequest {all_logits:None, embeddings: Some(embeddings)};
+        let output_request = OutputRequest {all_logits:Some(vec![]), embeddings: Some(vec![])};
         Ok(ExecutionContext(Box::new(LLMExecutionContext {
             model: self.model.clone(),
             inference_session,
@@ -103,7 +112,7 @@ impl BackendExecutionContext for LLMExecutionContext {
         //self.
         // Construct the tensor.
         //let d = tensor_data.data;
-        let query = tensor_data.data;
+        let query = std::str::from_utf8(&tensor.tensor_data).unwrap();
         let vocab = self.model.tokenizer();
         let beginning_of_sentence = true;
         self.query_token_ids = vocab
@@ -120,22 +129,51 @@ impl BackendExecutionContext for LLMExecutionContext {
         Ok(())
     }
 
-    fn get_output(&mut self, _tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
+    fn get_output(&mut self, tensor_id: &TensorId) -> Result<TensorInternalData, anyhow::Error> {
+        match tensor_id {
+            TensorId::Name(name) => {
+                match name.as_str() {
+                    "embeddings" => self.get_embeddings(),
+                    "all_logits" => self.get_all_logits(),
+                    _ => Err(anyhow!("Unknown output with name {name}. Supported names are `embeddings` and `all_logits`")),
+                }
+            }
+            TensorId::Index(i) => {
+                Err(anyhow!("Unknown output with index {i}. Supported indexes are names are `embeddings` and `all_logits`"))
+            }
+        }
+    }
+}
+
+impl LLMExecutionContext {
+
+    fn get_tensor_data(data: &Vec<f32>) -> TensorInternalData {
+        let tensor_data = data.clone()
+        .into_iter()
+        .flat_map(|x| f32::to_le_bytes(x).to_vec().into_iter())
+        .collect();
+        let tensor_type = TensorType::Fp32;
+        let tensor_dimensions: Vec<u32> = vec![data.len() as u32];
+        TensorInternalData{
+            tensor_data,
+            tensor_dimensions,
+            tensor_type,
+        }
+    }
+
+    fn get_embeddings(&mut self)-> Result<TensorInternalData, anyhow::Error>  {
         if let Some(tensor_data_f32) = &self.output_request.embeddings {
-        //let tensor_data_f32: Vec<f32> = self.output_request.embeddings();
-            let tensor_data = tensor_data_f32.clone()
-                .into_iter()
-                .flat_map(|x| f32::to_le_bytes(x).to_vec().into_iter())
-                .collect();
-            let tensor_type = TensorType::Fp32;
-            let tensor_dimensions: Vec<u32> = vec![tensor_data_f32.len() as u32];
-            Ok(TensorInternalData{
-                tensor_data,
-                tensor_dimensions,
-                tensor_type,
-            })
+            Ok(Self::get_tensor_data(tensor_data_f32))
         } else {
-            Err(anyhow!("missing embeddings in this model"))
+            Err(anyhow!("Мissing embeddings in this model"))
+        }
+    }
+
+    fn get_all_logits(&mut self)-> Result<TensorInternalData, anyhow::Error>  {
+        if let Some(tensor_data_f32) = &self.output_request.all_logits {
+            Ok(Self::get_tensor_data(tensor_data_f32))
+        } else {
+            Err(anyhow!("Мissing all logits in this model"))
         }
     }
 }

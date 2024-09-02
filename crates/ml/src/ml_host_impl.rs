@@ -239,10 +239,8 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
             .get(tensor.rep())
             .context(format!("Can't find tensor with ID = {}", tensor.rep()))?;
 
-        let index = input_name
-            .parse::<usize>()
-            .context("Can't parse {} to usize for input_name={input_name}")?;
-        let tensor_id = TensorId::Index(index as u32);
+
+        let tensor_id = TensorId::new(&input_name);
 
         Ok(execution_context
             .0
@@ -286,10 +284,7 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
                 graph_execution_context.rep()
             )))?;
 
-        let index = input_name
-            .parse::<usize>()
-            .context("Can't parse {} to usize for input_name={input_name}")?;
-        let tensor_id = TensorId::Index(index as u32);
+        let tensor_id = TensorId::new(&input_name);
 
         let res = graph_execution.0.get_output(&tensor_id).map_err(|err| {
             MLHostImpl::new_error(&mut self.errors, ErrorCode::RuntimeError, err.to_string())
@@ -406,6 +401,7 @@ impl tensor::Host for MLHostImpl {}
 fn map_string_to_graph_encoding(target: &str) -> Option<GraphEncoding> {
     match target {
         "openvino" => Some(GraphEncoding::Openvino),
+        "llm" => Some(GraphEncoding::Ggml),
         _ => None,
     }
 }
