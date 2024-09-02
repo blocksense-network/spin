@@ -132,7 +132,7 @@ pub fn imagenet_openvino_test(
     };
 
     let tensor_dimensions: Vec<u32> = vec![1, 3, 224, 224];
-    let image_file_bytes = std::fs::read(&image_file).unwrap();
+    let image_file_bytes = std::fs::read(image_file).unwrap();
     let tensor_data = preprocess_image_for_imagenet(&image_file_bytes, &tensor_dimensions);
 
     let tensor_id = {

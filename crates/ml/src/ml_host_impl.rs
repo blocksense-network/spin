@@ -239,7 +239,6 @@ impl inference::HostGraphExecutionContext for MLHostImpl {
             .get(tensor.rep())
             .context(format!("Can't find tensor with ID = {}", tensor.rep()))?;
 
-
         let tensor_id = TensorId::new(&input_name);
 
         Ok(execution_context

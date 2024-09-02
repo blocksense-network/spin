@@ -43,19 +43,4 @@ pub trait BackendExecutionContext: Send + Sync {
 #[derive(Debug)]
 pub enum TensorId {
     Index(u32),
-    //Name(String),
-}
-impl TensorId {
-    pub fn index(&self) -> Option<u32> {
-        match self {
-            TensorId::Index(i) => Some(*i),
-            //TensorId::Name(_) => None,
-        }
-    }
-    pub fn name(&self) -> Option<&str> {
-        match self {
-            TensorId::Index(_) => None,
-            //TensorId::Name(n) => Some(n),
-        }
-    }
 }
