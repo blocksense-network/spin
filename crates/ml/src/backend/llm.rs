@@ -14,7 +14,7 @@ use super::{BackendExecutionContext, BackendInner, TensorId};
 use crate::ml_host_impl::ExecutionContext;
 use crate::ml_host_impl::TensorInternalData;
 
-use anyhow::{anyhow, Ok};
+use anyhow::{anyhow, Context, Ok};
 use sha1::{Digest, Sha1};
 
 pub struct RustformersLLMBackend {
@@ -107,22 +107,51 @@ unsafe impl Sync for LLMExecutionContext {}
 impl BackendExecutionContext for LLMExecutionContext {
     fn set_input(
         &mut self,
-        _tensor_id: &TensorId,
+        tensor_id: &TensorId,
         tensor: &TensorInternalData,
     ) -> Result<(), anyhow::Error> {
-        //self.
-        // Construct the tensor.
-        //let d = tensor_data.data;
-        let query = std::str::from_utf8(&tensor.tensor_data).unwrap();
-        let vocab = self.model.tokenizer();
-        let beginning_of_sentence = true;
-        self.query_token_ids = vocab
-            .tokenize(query, beginning_of_sentence)
-            .unwrap()
-            .iter()
-            .map(|(_, tok)| *tok)
-            .collect::<Vec<_>>();
-        Ok(())
+        match tensor_id {
+            TensorId::Name(name) => {
+                match name.as_str() {
+                    "query" => {
+                        let query = std::str::from_utf8(&tensor.tensor_data).unwrap();
+                        let vocab = self.model.tokenizer();
+                        let beginning_of_sentence = true;
+                        self.query_token_ids = vocab
+                            .tokenize(query, beginning_of_sentence)
+                            .unwrap()
+                            .iter()
+                            .map(|(_, tok)| *tok)
+                            .collect::<Vec<_>>();
+                        return Ok(())
+                    },
+                    "token_ids" => {
+                        let mut query_token_ids = vec![];
+                        let vocab = self.model.tokenizer();
+                        let num_tokens: u32 = vocab.len().try_into().context("Only vocabs with num tokens less then 32 unsigned bits are supprted")?;
+                        for i in 0..(tensor.tensor_data.len()/4) {
+                            let offset = i * 4;
+                            let v = u32::from_le_bytes(
+                                tensor.tensor_data[offset..offset + 4]
+                                    .try_into()
+                                    .expect("Needed 4 bytes for a float"),
+                            );
+                            if v < num_tokens {
+                                query_token_ids.push(v);
+                            } else {
+                                return Err(anyhow!("Unexpected token with number {v}, which is greater the number of tokens {num_tokens}"));
+                            }
+                        }
+                        self.query_token_ids = query_token_ids;
+                        return Ok(());
+                    },
+                    _ => Err(anyhow!("Unknown output with name {name}. Supported names are `embeddings` and `all_logits`")),
+                }
+            }
+            TensorId::Index(_) => {
+                Err(anyhow!("Input as index is not supported. Supported TensorIDs `query` and `token_ids`"))
+            }
+        }
     }
 
     fn compute(&mut self) -> Result<(), anyhow::Error> {
