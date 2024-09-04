@@ -15,7 +15,9 @@ fn main() {
     fs::create_dir_all(images_dir).unwrap();
     let files = ["model.xml", "model.bin", "images/0.jpg", "images/1.jpg"];
     for file in files {
-        try_download(&(base_url.to_owned() + file), &imagenet_path.join(file)).unwrap();
+        if let Err(err) = try_download(&(base_url.to_owned() + file), &imagenet_path.join(file)) {
+            println!("ERROR: {err}");
+        }
     }
 
     println!("cargo:rerun-if-changed=build.rs");
