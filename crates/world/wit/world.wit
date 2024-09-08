@@ -12,9 +12,11 @@ world http-trigger-rc20231018 {
   export wasi:http/incoming-handler@0.2.0-rc-2023-10-18;
 }
 
+
 /// The imports needed for a guest to run on a Spin host
 world platform {
   include wasi:cli/imports@0.2.0;
+  include ml;
   import wasi:http/outgoing-handler@0.2.0;
   import llm;
   import redis;
