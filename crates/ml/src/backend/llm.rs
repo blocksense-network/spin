@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use llm::{InferenceSession, InferenceSessionConfig, Model, OutputRequest};
+use llm::{InferenceSession, InferenceSessionConfig, Model, OutputRequest, TokenUtf8Buffer};
 use spin_world::v2 as ml_wit;
 
 use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
@@ -30,6 +30,9 @@ pub struct LLMExecutionContext {
     inference_session: InferenceSession,
     output_request: llm::OutputRequest,
     query_token_ids: Vec<u32>,
+    token_utf8_buf: TokenUtf8Buffer,
+    response: String,
+    n_past: usize,
 }
 
 impl BackendInner for RustformersLLMBackend {
@@ -97,6 +100,9 @@ impl BackendGraph for RustformersLLMGraph {
             inference_session,
             output_request,
             query_token_ids: Default::default(),
+            token_utf8_buf: TokenUtf8Buffer::new(),
+            response: Default::default(),
+            n_past: 0,
         })))
     }
 }
@@ -125,24 +131,34 @@ impl BackendExecutionContext for LLMExecutionContext {
                             .collect::<Vec<_>>();
                         return Ok(())
                     },
-                    "token_ids" => {
-                        let mut query_token_ids = vec![];
+                    "next_token" => {
+                        if tensor.tensor_type != TensorType::I32 || tensor.tensor_dimensions != vec![1, 1] || tensor.tensor_data.len() != 4 {
+                            return Err(anyhow!("Expected tensor data is tensor_type = I32 and tensor_dimensions = [1,1]"));
+                        }
+                        let next_token = u32::from_le_bytes(tensor.tensor_data[0..4].try_into().context("This should never happen!")?);
+                        println!("NEXT TOKEN = {next_token}");
                         let vocab = self.model.tokenizer();
                         let num_tokens: u32 = vocab.len().try_into().context("Only vocabs with num tokens less then 32 unsigned bits are supprted")?;
-                        for i in 0..(tensor.tensor_data.len()/4) {
-                            let offset = i * 4;
-                            let v = u32::from_le_bytes(
-                                tensor.tensor_data[offset..offset + 4]
-                                    .try_into()
-                                    .expect("Needed 4 bytes for a float"),
-                            );
-                            if v < num_tokens {
-                                query_token_ids.push(v);
-                            } else {
-                                return Err(anyhow!("Unexpected token with number {v}, which is greater the number of tokens {num_tokens}"));
-                            }
+
+                        println!("NUM TOKENS = {num_tokens}");
+                        if next_token >= num_tokens {
+                            return Err(anyhow!("Unexpected token with number {next_token}, which is greater the number of tokens {num_tokens}"));
                         }
-                        self.query_token_ids = query_token_ids;
+                        println!("EOT TOKEN ID = {}", self.model.eot_token_id());
+                        if next_token == self.model.eot_token_id() {
+                            return Err(anyhow!("End of sequence token passed as {next_token}"));
+                        }
+                        println!("n_past = {}, model_size = {}", self.n_past, self.model.context_size());
+                        if self.n_past + 1 >= self.model.context_size() {
+                            return Err(anyhow!("Exceeded maximunim number of model context size = {}", self.model.context_size()));
+                        }
+                        self.n_past += 1;                
+                        let token = vocab.token(next_token as usize);
+                        if let Some(tokens) = self.token_utf8_buf.push(&token) {
+                            self.response = tokens;
+
+                        }
+                        self.query_token_ids = vec![next_token];
                         return Ok(());
                     },
                     _ => Err(anyhow!("Unknown output with name {name}. Supported names are `embeddings` and `all_logits`")),
@@ -169,6 +185,7 @@ impl BackendExecutionContext for LLMExecutionContext {
                 match name.as_str() {
                     "embeddings" => self.get_embeddings(),
                     "all_logits" => self.get_all_logits(),
+                    "response" => self.get_response(),
                     _ => Err(anyhow!("Unknown output with name {name}. Supported names are `embeddings` and `all_logits`")),
                 }
             }
@@ -205,9 +222,24 @@ impl LLMExecutionContext {
 
     fn get_all_logits(&mut self) -> Result<TensorInternalData, anyhow::Error> {
         if let Some(tensor_data_f32) = &self.output_request.all_logits {
-            Ok(Self::get_tensor_data(tensor_data_f32))
+            let vocab = self.model.tokenizer();
+            let num_tokens: u32 = vocab.len().try_into().context("Only vocabs with num tokens less then 32 unsigned bits are supprted")?;
+            let l = tensor_data_f32.len();
+            Ok(Self::get_tensor_data(&tensor_data_f32[l - num_tokens as usize .. l]))
         } else {
             Err(anyhow!("Мissing all logits in this model"))
         }
+    }
+
+    fn get_response(&mut self) -> Result<TensorInternalData, anyhow::Error> {
+        let tensor_data = self.response.clone().into_bytes();
+        let tensor_type = TensorType::U8;
+        let tensor_dimensions: Vec<u32> = vec![tensor_data.len() as u32];
+        Ok(TensorInternalData {
+            tensor_data,
+            tensor_dimensions,
+            tensor_type,
+        })
+
     }
 }
