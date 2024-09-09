@@ -136,32 +136,32 @@ impl BackendExecutionContext for LLMExecutionContext {
                             return Err(anyhow!("Expected tensor data is tensor_type = I32 and tensor_dimensions = [1,1]"));
                         }
                         let next_token = u32::from_le_bytes(tensor.tensor_data[0..4].try_into().context("This should never happen!")?);
-                        println!("NEXT TOKEN = {next_token}");
+                        //println!("NEXT TOKEN = {next_token}");
                         let vocab = self.model.tokenizer();
                         let num_tokens: u32 = vocab.len().try_into().context("Only vocabs with num tokens less then 32 unsigned bits are supprted")?;
 
-                        println!("NUM TOKENS = {num_tokens}");
+                        //println!("NUM TOKENS = {num_tokens}");
                         if next_token >= num_tokens {
                             return Err(anyhow!("Unexpected token with number {next_token}, which is greater the number of tokens {num_tokens}"));
                         }
-                        println!("EOT TOKEN ID = {}", self.model.eot_token_id());
+                        //println!("EOT TOKEN ID = {}", self.model.eot_token_id());
                         if next_token == self.model.eot_token_id() {
                             return Err(anyhow!("End of sequence token passed as {next_token}"));
                         }
-                        println!("n_past = {}, model_size = {}", self.n_past, self.model.context_size());
+                        //println!("n_past = {}, model_size = {}", self.n_past, self.model.context_size());
                         if self.n_past + 1 >= self.model.context_size() {
                             return Err(anyhow!("Exceeded maximunim number of model context size = {}", self.model.context_size()));
                         }
                         self.n_past += 1;                
                         let token = vocab.token(next_token as usize);
                         if let Some(tokens) = self.token_utf8_buf.push(&token) {
-                            self.response = tokens;
+                            self.response.push_str(&tokens);
 
                         }
                         self.query_token_ids = vec![next_token];
                         return Ok(());
                     },
-                    _ => Err(anyhow!("Unknown output with name {name}. Supported names are `embeddings` and `all_logits`")),
+                    _ => Err(anyhow!("Unknown input with name {name}. Supported names are `query` and `next_token`")),
                 }
             }
             TensorId::Index(_) => {
@@ -184,13 +184,14 @@ impl BackendExecutionContext for LLMExecutionContext {
             TensorId::Name(name) => {
                 match name.as_str() {
                     "embeddings" => self.get_embeddings(),
-                    "all_logits" => self.get_all_logits(),
+                    "last_logits" => self.get_all_logits(),
                     "response" => self.get_response(),
-                    _ => Err(anyhow!("Unknown output with name {name}. Supported names are `embeddings` and `all_logits`")),
+                    "eos_token_id" => self.get_eos_token_id(),
+                    _ => Err(anyhow!("Unknown output with name {name}. Supported names are `embeddings`, `response` and `last_logits`")),
                 }
             }
             TensorId::Index(i) => {
-                Err(anyhow!("Unknown output with index {i}. Supported indexes are names are `embeddings` and `all_logits`"))
+                Err(anyhow!("Unknown output with index {i}. Supported indexes are names are `embeddings`, `response` and `last_logits`"))
             }
         }
     }
@@ -240,6 +241,16 @@ impl LLMExecutionContext {
             tensor_dimensions,
             tensor_type,
         })
+    }
 
+    fn get_eos_token_id(&mut self) -> Result<TensorInternalData, anyhow::Error> {
+        let tensor_data = self.model.eot_token_id().to_le_bytes().to_vec();
+        let tensor_type = TensorType::I32;
+        let tensor_dimensions: Vec<u32> = vec![1];
+        Ok(TensorInternalData {
+            tensor_data,
+            tensor_dimensions,
+            tensor_type,
+        })
     }
 }

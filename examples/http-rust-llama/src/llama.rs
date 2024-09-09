@@ -212,8 +212,28 @@ fn extract_response(context: &GraphExecutionContext) -> std::result::Result<Stri
     }
 }
 
+fn extract_eos_token_id(context: &GraphExecutionContext) -> std::result::Result<u32, Box<dyn std::error::Error>> {
+    let output_result_id = inference::GraphExecutionContext::get_output(&context, "eos_token_id").unwrap();
+    let output_data = tensor::Tensor::data(&output_result_id);
+    let output_dimensions = tensor::Tensor::dimensions(&output_result_id);
+    let output_type = tensor::Tensor::ty(&output_result_id);
+    if output_dimensions.len() == 1
+        && output_type == tensor::TensorType::I32
+    {
+        let output_vec =
+            unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const u32, output_dimensions[0] as usize) }.to_vec();   
+        if output_vec.len() == 1 { 
+            Ok(output_vec[0])
+        }  else {
+            Err(format!("Unexpected `eos_token_id` tensor dimensions").into())
+        }
+    } else {
+        Err(format!("Unexpected response tensor format").into())
+    }
+}
+
 fn sample_next_token(context: &GraphExecutionContext, rnd_num: f32) -> Result<u32, Box<dyn std::error::Error>> {
-    let output_result_id = inference::GraphExecutionContext::get_output(&context, "all_logits").unwrap();
+    let output_result_id = inference::GraphExecutionContext::get_output(&context, "last_logits").unwrap();
     let output_data = tensor::Tensor::data(&output_result_id);
     let output_dimensions = tensor::Tensor::dimensions(&output_result_id);
     let output_type = tensor::Tensor::ty(&output_result_id);
@@ -222,16 +242,13 @@ fn sample_next_token(context: &GraphExecutionContext, rnd_num: f32) -> Result<u3
             unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const f32, output_dimensions[0] as usize) };
         let mut logits = Logits::try_from(output_vec_f32.to_vec())?;
         logits.ensure_softmax()?;
-        //let mut res = format!("dim = {output_dimensions:?} type = {output_type:?}");  
         let mut cdf = 0f32;
         let k = 40;
         for i in 0..k {
             cdf += logits.logits[i].prob;
-            //let f = format!("</br> token_id = {} -> prob {:.3?} cdf = {:.3?}", logits.logits[i].token_id, logits.logits[i].prob, cdf);
-            //res.push_str(&f)
         }
         let mut s = 0f32;
-        let rnd_num = rnd_num * cdf;//rng.next_u32() as f32 * 2.0f32.powf(-32.0f32) * cdf;
+        let rnd_num = rnd_num * cdf;
         let mut selected = k - 1;
         for i in 0..k {
             s += logits.logits[i].prob;
@@ -242,7 +259,7 @@ fn sample_next_token(context: &GraphExecutionContext, rnd_num: f32) -> Result<u3
         }
         Ok(logits.logits[selected].token_id)
     } else {
-        Err(format!("Unexpected all_logits tensor format").into())
+        Err(format!("Unexpected `last_logits` tensor format").into())
     }
 }
 
@@ -257,11 +274,6 @@ pub fn llama_infer(
     let query_tensor_dimensions: Vec<u32> = vec![1, query_tensor_data.len() as u32];
     let query_tensor_id = tensor::Tensor::new(&query_tensor_dimensions, query_tensor_type, &query_tensor_data);
     let query_input_name = "query";
-
-
-
-    //let input_name = "token_ids";
-
     inference::GraphExecutionContext::set_input(&context, query_input_name, query_tensor_id).unwrap();
     inference::GraphExecutionContext::compute(&context).unwrap();
     
@@ -272,26 +284,26 @@ pub fn llama_infer(
     }
 
     let mut res = "".to_string();
-
-    for _ in 0..100 {
+    let eos_token_id = extract_eos_token_id(&context)?;
+    for _ in 0..2048 {
         let r = rng.next_u32() as f32 * 2.0f32.powf(-32.0f32);
         match sample_next_token(context, r) {
             Ok(token_id) => {
-                let token_tensor_data = token_id.to_le_bytes().to_vec();
-                let token_tensor_type = tensor::TensorType::I32;
-                let token_tensor_dimensions: Vec<u32> = vec![1, 1];
-                let token_tensor_id = tensor::Tensor::new(&token_tensor_dimensions, token_tensor_type, &token_tensor_data);
-                let token_input_name = "next_token";
-                println!("next token = {token_id} tensor_data = {token_tensor_data:?}");
-                if let Err(err) = inference::GraphExecutionContext::set_input(&context, token_input_name, token_tensor_id) {
-                    
-                    eprintln!("Error err = {err:?}");
-                    return Ok(res);
+                if token_id != eos_token_id {
+                    let token_tensor_data = token_id.to_le_bytes().to_vec();
+                    let token_tensor_type = tensor::TensorType::I32;
+                    let token_tensor_dimensions: Vec<u32> = vec![1, 1];
+                    let token_tensor_id = tensor::Tensor::new(&token_tensor_dimensions, token_tensor_type, &token_tensor_data);
+                    let token_input_name = "next_token";
+                    println!("next token = {token_id} tensor_data = {token_tensor_data:?}");
+                    inference::GraphExecutionContext::set_input(&context, token_input_name, token_tensor_id).unwrap();
+                    inference::GraphExecutionContext::compute(&context).unwrap();
+                    let response = extract_response(&context)?;
+                    res.push_str(format!("<br> token_id = {token_id} response = {response}").as_str());
+                } else {
+                    break;
                 }
-                inference::GraphExecutionContext::compute(&context).unwrap();
-                let response = extract_response(&context)?;
-                res.push_str(format!("<br> token_id = {token_id} response = {response}").as_str());
-            }
+            },
             Err(e) => {
                 res.push_str(format!("<br> error = {e}").as_str());
             }
@@ -299,46 +311,5 @@ pub fn llama_infer(
     }
 
     Ok(res)
- 
-    /*
-
-    let output_result_id = inference::GraphExecutionContext::get_output(&context, "all_logits").unwrap();
-    let output_data = tensor::Tensor::data(&output_result_id);
-    let output_dimensions = tensor::Tensor::dimensions(&output_result_id);
-    let output_type = tensor::Tensor::ty(&output_result_id);
-
-    let res2 = if output_dimensions.len() == 1
-        && output_type == tensor::TensorType::Fp32
-    {
-        let output_vec_f32 =
-            unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const f32, output_dimensions[0] as usize) };
-        let mut logits = Logits::try_from(output_vec_f32.to_vec())?;
-        logits.ensure_softmax()?;
-        let mut res = format!("dim = {output_dimensions:?} type = {output_type:?}");  
-        let mut cdf = 0f32;
-        let k = 40;
-        for i in 0..k {
-            cdf += logits.logits[i].prob;
-            let f = format!("</br> token_id = {} -> prob {:.3?} cdf = {:.3?}", logits.logits[i].token_id, logits.logits[i].prob, cdf);
-            res.push_str(&f)
-        }
-        let mut s = 0f32;
-        let rnd_num = rng.next_u32() as f32 * 2.0f32.powf(-32.0f32) * cdf;
-        let mut selected = k - 1;
-        for i in 0..k {
-            s += logits.logits[i].prob;
-            if s >= rnd_num {
-                selected = i;
-                break;
-            }
-        }
-        res.push_str(&format!("<br>Selected token_id = {} -> prob {:.3?} rnd = {:.3?}", logits.logits[selected].token_id, logits.logits[selected].prob, rnd_num));
-        res
-    } else {
-        return Err(format!("Output mismatch found dim = {output_dimensions:?} type = {output_type:?}").into());
-    };
-    Ok(format!("</br> all logits = {res2} </br> </br> embeddings = {res}"))
-
-    */
     
 }
