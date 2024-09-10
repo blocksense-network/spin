@@ -19,9 +19,8 @@ mod ml {
 
 mod llama;
 
-
-use crate::ml::fermyon::spin::graph;
 use crate::llama::llama_infer;
+use crate::ml::fermyon::spin::graph;
 
 fn parse_content_type(headers: &HeaderMap<HeaderValue>) -> Option<mime::Mime> {
     headers
@@ -29,7 +28,6 @@ fn parse_content_type(headers: &HeaderMap<HeaderValue>) -> Option<mime::Mime> {
         .and_then(|val| val.to_str().ok())
         .and_then(|val| val.parse::<mime::Mime>().ok())
 }
-
 
 /// A simple Spin HTTP component.
 #[http_component]
@@ -56,8 +54,6 @@ async fn llama_demo_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<impl 
     return Ok(response);
 }
 
-
-
 fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
     let res = match req.method() {
         &Method::POST => {
@@ -67,15 +63,13 @@ fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
             let mp = Multipart::with_body(&*body, boundary.as_str());
 
             let form_data = llama_process_form(mp).unwrap();
-    
+
             use core::result::Result::Ok;
             let model_name = format!("llm:{}", form_data.model);
 
             match load_by_name(&model_name) {
                 Ok(llama_graph) => match graph::Graph::init_execution_context(&llama_graph) {
-                    Ok(context) => {
-                        llama_infer(&context, &form_data.promt).unwrap()
-                    }
+                    Ok(context) => llama_infer(&context, &form_data.promt, model_name).unwrap(),
                     Err(err) => err.data(),
                 },
                 Err(err) => err.data(),
@@ -85,8 +79,6 @@ fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
     };
     Ok(lamma_add_form(format!("<div>{res}</div>")))
 }
-
-
 
 fn lamma_add_form(mut html_body: String) -> String {
     let form = r#"
@@ -143,7 +135,6 @@ fn llama_process_form(mut mp: Multipart<&[u8]>) -> Result<LlamaFormData, anyhow:
             "model" => {
                 model = "".to_string();
                 let _bytes_read = field.data.read_to_string(&mut model).unwrap();
-
             }
             "target" => {
                 target = "".to_string();
@@ -152,7 +143,6 @@ fn llama_process_form(mut mp: Multipart<&[u8]>) -> Result<LlamaFormData, anyhow:
             _ => {}
         }
     }
-
 
     Ok(LlamaFormData {
         promt,

@@ -5,11 +5,14 @@ use crate::tensor::TensorType;
 */
 
 use crate::ml::fermyon::spin::inference::GraphExecutionContext;
-use crate::ml::fermyon::spin::{inference, tensor, errors};
+use crate::ml::fermyon::spin::{errors, inference, tensor};
 
+use crate::Store;
 use rand_chacha;
-use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::rand_core::RngCore;
+use rand_chacha::rand_core::SeedableRng;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq)]
 /// An individual logit with some additional metadata for use by the samplers.
@@ -32,7 +35,6 @@ pub struct Logits {
     has_softmax: bool,
     logits: Vec<Logit>,
 }
-
 
 impl Logits {
     /// Make a new [Logits] from an iterator of `f32`. We'd like to
@@ -71,7 +73,7 @@ impl Logits {
     pub fn try_from_iter_top_k<I: IntoIterator<Item = f32>>(
         it: I,
         k: usize,
-    ) -> Result<Self,  anyhow::Error> {
+    ) -> Result<Self, anyhow::Error> {
         if k == 0 {
             return Ok(Self::default());
         }
@@ -171,60 +173,81 @@ impl Logits {
         self.has_softmax = true;
         Ok(self)
     }
-
 }
 
-
-fn extract_embeddings(context: &GraphExecutionContext) -> std::result::Result<String, Box<dyn std::error::Error>> {
-    let output_result_id = inference::GraphExecutionContext::get_output(&context, "embeddings").unwrap();
+fn extract_embeddings(
+    context: &GraphExecutionContext,
+) -> std::result::Result<String, Box<dyn std::error::Error>> {
+    let output_result_id =
+        inference::GraphExecutionContext::get_output(&context, "embeddings").unwrap();
     let output_data = tensor::Tensor::data(&output_result_id);
     let output_dimensions = tensor::Tensor::dimensions(&output_result_id);
     let output_type = tensor::Tensor::ty(&output_result_id);
-  
 
     if output_dimensions.len() == 1
         && output_dimensions[0] == 3200
         && output_type == tensor::TensorType::Fp32
     {
-        let output_vec_f32 =
-            unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const f32, output_dimensions[0] as usize) };
-        
-        let res = format!("dim = {output_dimensions:?} type = {output_type:?} data = {output_vec_f32:.2?}");  
+        let output_vec_f32 = unsafe {
+            std::slice::from_raw_parts(
+                output_data.as_ptr() as *const f32,
+                output_dimensions[0] as usize,
+            )
+        };
+
+        let res = format!(
+            "dim = {output_dimensions:?} type = {output_type:?} data = {output_vec_f32:.2?}"
+        );
         Ok(res)
     } else {
-        Err(format!("Output mismatch found dim = {output_dimensions:?} type = {output_type:?}").into())
+        Err(
+            format!("Output mismatch found dim = {output_dimensions:?} type = {output_type:?}")
+                .into(),
+        )
     }
 }
 
-fn extract_response(context: &GraphExecutionContext) -> std::result::Result<String, Box<dyn std::error::Error>> {
-    let output_result_id = inference::GraphExecutionContext::get_output(&context, "response").unwrap();
+fn extract_response(
+    context: &GraphExecutionContext,
+) -> std::result::Result<String, Box<dyn std::error::Error>> {
+    let output_result_id =
+        inference::GraphExecutionContext::get_output(&context, "response").unwrap();
     let output_data = tensor::Tensor::data(&output_result_id);
     let output_dimensions = tensor::Tensor::dimensions(&output_result_id);
     let output_type = tensor::Tensor::ty(&output_result_id);
-    if output_dimensions.len() == 1
-        && output_type == tensor::TensorType::U8
-    {
-        let output_vec =
-            unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const u8, output_dimensions[0] as usize) }.to_vec();   
+    if output_dimensions.len() == 1 && output_type == tensor::TensorType::U8 {
+        let output_vec = unsafe {
+            std::slice::from_raw_parts(
+                output_data.as_ptr() as *const u8,
+                output_dimensions[0] as usize,
+            )
+        }
+        .to_vec();
         Ok(String::from_utf8(output_vec)?)
     } else {
         Err(format!("Unexpected response tensor format").into())
     }
 }
 
-fn extract_eos_token_id(context: &GraphExecutionContext) -> std::result::Result<u32, Box<dyn std::error::Error>> {
-    let output_result_id = inference::GraphExecutionContext::get_output(&context, "eos_token_id").unwrap();
+fn extract_eos_token_id(
+    context: &GraphExecutionContext,
+) -> std::result::Result<u32, Box<dyn std::error::Error>> {
+    let output_result_id =
+        inference::GraphExecutionContext::get_output(&context, "eos_token_id").unwrap();
     let output_data = tensor::Tensor::data(&output_result_id);
     let output_dimensions = tensor::Tensor::dimensions(&output_result_id);
     let output_type = tensor::Tensor::ty(&output_result_id);
-    if output_dimensions.len() == 1
-        && output_type == tensor::TensorType::I32
-    {
-        let output_vec =
-            unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const u32, output_dimensions[0] as usize) }.to_vec();   
-        if output_vec.len() == 1 { 
+    if output_dimensions.len() == 1 && output_type == tensor::TensorType::I32 {
+        let output_vec = unsafe {
+            std::slice::from_raw_parts(
+                output_data.as_ptr() as *const u32,
+                output_dimensions[0] as usize,
+            )
+        }
+        .to_vec();
+        if output_vec.len() == 1 {
             Ok(output_vec[0])
-        }  else {
+        } else {
             Err(format!("Unexpected `eos_token_id` tensor dimensions").into())
         }
     } else {
@@ -232,16 +255,25 @@ fn extract_eos_token_id(context: &GraphExecutionContext) -> std::result::Result<
     }
 }
 
-fn sample_next_token(context: &GraphExecutionContext, rnd_num: f32) -> Result<u32, Box<dyn std::error::Error>> {
-    let output_result_id = inference::GraphExecutionContext::get_output(&context, "last_logits").unwrap();
+fn sample_next_token(
+    context: &GraphExecutionContext,
+    rnd_num: f32,
+) -> Result<(u32, Vec<TokenWithProbabily>), Box<dyn std::error::Error>> {
+    let output_result_id =
+        inference::GraphExecutionContext::get_output(&context, "last_logits").unwrap();
     let output_data = tensor::Tensor::data(&output_result_id);
     let output_dimensions = tensor::Tensor::dimensions(&output_result_id);
     let output_type = tensor::Tensor::ty(&output_result_id);
     if output_dimensions.len() == 1 && output_type == tensor::TensorType::Fp32 {
-        let output_vec_f32 =
-            unsafe { std::slice::from_raw_parts(output_data.as_ptr() as *const f32, output_dimensions[0] as usize) };
+        let output_vec_f32 = unsafe {
+            std::slice::from_raw_parts(
+                output_data.as_ptr() as *const f32,
+                output_dimensions[0] as usize,
+            )
+        };
         let mut logits = Logits::try_from(output_vec_f32.to_vec())?;
         logits.ensure_softmax()?;
+
         let mut cdf = 0f32;
         let k = 40;
         for i in 0..k {
@@ -257,27 +289,104 @@ fn sample_next_token(context: &GraphExecutionContext, rnd_num: f32) -> Result<u3
                 break;
             }
         }
-        Ok(logits.logits[selected].token_id)
+
+        let mut res: Vec<TokenWithProbabily> = vec![];
+        for i in 0..k {
+            res.push(TokenWithProbabily {
+                token_id: logits.logits[i].token_id,
+                prob: logits.logits[i].prob,
+            });
+        }
+        Ok((logits.logits[selected].token_id, res))
     } else {
         Err(format!("Unexpected `last_logits` tensor format").into())
     }
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
+struct TokenWithProbabily {
+    token_id: u32,
+    prob: f32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct InferenceSession {
+    model_name: String,
+    query: String,
+    response: String,
+    rng_seed: u64,
+    sampled_tokens: Vec<u32>,
+    top_logits: Vec<TokenWithProbabily>,
+    hash_sha256: String,
+}
+
+impl InferenceSession {
+    pub fn new(model_name: &String, query: &str, rng_seed: u64) -> Self {
+        Self {
+            model_name: model_name.clone(),
+            query: query.to_string(),
+            response: "".to_string(),
+            rng_seed: rng_seed,
+            sampled_tokens: Vec::new(),
+            top_logits: Vec::new(),
+            hash_sha256: "".to_string(),
+        }
+    }
+
+    pub fn add_token(&mut self, token_id: u32, top_tokens: Vec<TokenWithProbabily>) {
+        self.sampled_tokens.push(token_id);
+        self.top_logits.extend_from_slice(&top_tokens);
+    }
+
+    pub fn finish(&mut self) -> String {
+        let token_ids: Vec<u8> = self
+            .top_logits
+            .iter()
+            .copied()
+            .flat_map(|x| u32::to_le_bytes(x.token_id).into_iter())
+            .collect();
+        let token_probs: Vec<u8> = self
+            .top_logits
+            .iter()
+            .copied()
+            .flat_map(|x| f32::to_le_bytes(x.prob).into_iter())
+            .collect();
+
+        let mut hasher = Sha256::new();
+        hasher.update(self.model_name.clone().into_bytes());
+        hasher.update(self.query.clone().into_bytes());
+        hasher.update(self.response.clone().into_bytes());
+        hasher.update(u64::to_le_bytes(self.rng_seed));
+        hasher.update(token_ids);
+        hasher.update(token_probs);
+        // read hash digest and consume hasher
+        let result = hasher.finalize();
+        self.hash_sha256 = hex::encode(result);
+        self.hash_sha256.clone()
+    }
+}
 
 pub fn llama_infer(
     context: &GraphExecutionContext,
     promt: &str,
+    model_name: String,
 ) -> std::result::Result<String, Box<dyn std::error::Error>> {
-
     let query_tensor_data = promt.to_owned().into_bytes();
     let query_tensor_type = tensor::TensorType::U8;
     let query_tensor_dimensions: Vec<u32> = vec![1, query_tensor_data.len() as u32];
-    let query_tensor_id = tensor::Tensor::new(&query_tensor_dimensions, query_tensor_type, &query_tensor_data);
+    let query_tensor_id = tensor::Tensor::new(
+        &query_tensor_dimensions,
+        query_tensor_type,
+        &query_tensor_data,
+    );
     let query_input_name = "query";
-    inference::GraphExecutionContext::set_input(&context, query_input_name, query_tensor_id).unwrap();
+    inference::GraphExecutionContext::set_input(&context, query_input_name, query_tensor_id)
+        .unwrap();
     inference::GraphExecutionContext::compute(&context).unwrap();
-    
-    let seed = 32;
+
+    let seed = 1337;
+    let mut session = InferenceSession::new(&model_name, promt, seed);
+
     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
     for _ in 0..32 {
         let _ = rng.next_u32();
@@ -285,25 +394,51 @@ pub fn llama_infer(
 
     let mut res = "".to_string();
     let eos_token_id = extract_eos_token_id(&context)?;
+
+    let store = Store::open_default()?;
+
+    let key = promt.to_string();
+
     for _ in 0..2048 {
         let r = rng.next_u32() as f32 * 2.0f32.powf(-32.0f32);
         match sample_next_token(context, r) {
-            Ok(token_id) => {
+            Ok((token_id, top_tokens)) => {
                 if token_id != eos_token_id {
                     let token_tensor_data = token_id.to_le_bytes().to_vec();
                     let token_tensor_type = tensor::TensorType::I32;
                     let token_tensor_dimensions: Vec<u32> = vec![1, 1];
-                    let token_tensor_id = tensor::Tensor::new(&token_tensor_dimensions, token_tensor_type, &token_tensor_data);
+                    let token_tensor_id = tensor::Tensor::new(
+                        &token_tensor_dimensions,
+                        token_tensor_type,
+                        &token_tensor_data,
+                    );
                     let token_input_name = "next_token";
                     println!("next token = {token_id} tensor_data = {token_tensor_data:?}");
-                    inference::GraphExecutionContext::set_input(&context, token_input_name, token_tensor_id).unwrap();
+                    inference::GraphExecutionContext::set_input(
+                        &context,
+                        token_input_name,
+                        token_tensor_id,
+                    )
+                    .unwrap();
                     inference::GraphExecutionContext::compute(&context).unwrap();
                     let response = extract_response(&context)?;
-                    res.push_str(format!("<br> token_id = {token_id} response = {response}").as_str());
+                    res.push_str(
+                        format!("<br> token_id = {token_id} response = {response}").as_str(),
+                    );
+                    session.add_token(token_id, top_tokens);
+                    session.response = response;
+                    //let j = serde_json::json!(&session);
+                    //println!("{}", j.to_string());
+                    let v = store.set_json::<InferenceSession>(key.clone(), &session);
+                    println!("updated {:?}", v);
                 } else {
+                    session.finish();
+                    res.push_str(format!("<br> hash_sha256 = {}", session.hash_sha256).as_str());
+                    let v = store.set_json::<InferenceSession>(key.clone(), &session);
+                    println!("finished {:?}", v);
                     break;
                 }
-            },
+            }
             Err(e) => {
                 res.push_str(format!("<br> error = {e}").as_str());
             }
@@ -311,5 +446,4 @@ pub fn llama_infer(
     }
 
     Ok(res)
-    
 }
