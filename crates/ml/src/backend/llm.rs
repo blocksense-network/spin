@@ -152,7 +152,7 @@ impl BackendExecutionContext for LLMExecutionContext {
                         if self.n_past + 1 >= self.model.context_size() {
                             return Err(anyhow!("Exceeded maximunim number of model context size = {}", self.model.context_size()));
                         }
-                        self.n_past += 1;                
+                        self.n_past += 1;
                         let token = vocab.token(next_token as usize);
                         if let Some(tokens) = self.token_utf8_buf.push(&token) {
                             self.response.push_str(&tokens);
@@ -164,9 +164,9 @@ impl BackendExecutionContext for LLMExecutionContext {
                     _ => Err(anyhow!("Unknown input with name {name}. Supported names are `query` and `next_token`")),
                 }
             }
-            TensorId::Index(_) => {
-                Err(anyhow!("Input as index is not supported. Supported TensorIDs `query` and `token_ids`"))
-            }
+            TensorId::Index(_) => Err(anyhow!(
+                "Input as index is not supported. Supported TensorIDs `query` and `token_ids`"
+            )),
         }
     }
 
@@ -224,9 +224,14 @@ impl LLMExecutionContext {
     fn get_all_logits(&mut self) -> Result<TensorInternalData, anyhow::Error> {
         if let Some(tensor_data_f32) = &self.output_request.all_logits {
             let vocab = self.model.tokenizer();
-            let num_tokens: u32 = vocab.len().try_into().context("Only vocabs with num tokens less then 32 unsigned bits are supprted")?;
+            let num_tokens: u32 = vocab
+                .len()
+                .try_into()
+                .context("Only vocabs with num tokens less then 32 unsigned bits are supprted")?;
             let l = tensor_data_f32.len();
-            Ok(Self::get_tensor_data(&tensor_data_f32[l - num_tokens as usize .. l]))
+            Ok(Self::get_tensor_data(
+                &tensor_data_f32[l - num_tokens as usize..l],
+            ))
         } else {
             Err(anyhow!("Мissing all logits in this model"))
         }

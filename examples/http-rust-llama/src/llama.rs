@@ -364,12 +364,22 @@ impl InferenceSession {
         self.hash_sha256 = hex::encode(result);
         self.hash_sha256.clone()
     }
+
+    pub fn generate_key(&self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(self.model_name.clone().into_bytes());
+        hasher.update(self.query.clone().into_bytes());
+        hasher.update(u64::to_le_bytes(self.rng_seed));
+        let result = hex::encode(hasher.finalize());
+        result[0..8].to_string()
+    }
 }
 
 pub fn llama_infer(
     context: &GraphExecutionContext,
     promt: &str,
     model_name: String,
+    seed: u64, 
 ) -> std::result::Result<String, Box<dyn std::error::Error>> {
     let query_tensor_data = promt.to_owned().into_bytes();
     let query_tensor_type = tensor::TensorType::U8;
@@ -384,7 +394,6 @@ pub fn llama_infer(
         .unwrap();
     inference::GraphExecutionContext::compute(&context).unwrap();
 
-    let seed = 1337;
     let mut session = InferenceSession::new(&model_name, promt, seed);
 
     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
@@ -397,7 +406,8 @@ pub fn llama_infer(
 
     let store = Store::open_default()?;
 
-    let key = promt.to_string();
+    let key = session.generate_key();
+    println!("Session with key = {key}");
 
     for _ in 0..2048 {
         let r = rng.next_u32() as f32 * 2.0f32.powf(-32.0f32);
@@ -446,4 +456,153 @@ pub fn llama_infer(
     }
 
     Ok(res)
+}
+
+
+fn render_session_public_to_http(session: &InferenceSession) -> String {
+    let query = &session.query;
+    let model = &session.model_name;
+    let response = &session.response;
+    let hash = &session.hash_sha256;
+    let rng_seed = &session.rng_seed;
+    let mut res = format!(
+        "<div>
+        <table>
+        <tr>
+            <td>Query:</td>
+            <td>{query}</td>
+        </tr>
+        <tr>
+            <td>model:</td>
+            <td>{model}</td>
+        </tr>
+        <tr>
+            <td>Response:</td>
+            <td>{response}</td>
+        </tr>
+        <tr>
+            <td>hash_sha256:</td>
+            <td>{hash}</td>
+        </tr>
+        <tr>
+            <td>Rnd seed:</td>
+            <td>{rng_seed}</td>
+        </tr>
+        </table>
+        </div>"
+    );
+    res
+}
+
+fn render_session_private_to_http(session: &InferenceSession) -> String {
+    let query = &session.query;
+    let model = &session.model_name;
+    let response = &session.response;
+    let hash = &session.hash_sha256;
+    let rng_seed = &session.rng_seed;
+    let mut res = "<div><table><thead><th>Iteration</th></thead>".to_string();
+    let mut offset = 0;
+    let mut it = 0;
+    let k = session.top_logits.len() / session.sampled_tokens.len();
+    for t in &session.sampled_tokens {
+        res.push_str("<tr>");
+        res.push_str(format!("<td><b>{it}</b></td>").as_str());
+        for i in 0..k {
+            let token_id = session.top_logits[offset + i].token_id;
+            if token_id != *t {
+                res.push_str(format!("<td>{token_id}</td>").as_str());
+            } else {
+                res.push_str(format!("<td><b>{token_id}</b></td>").as_str());
+            }
+        }
+        res.push_str("</tr>");
+
+        res.push_str("<tr>");
+        res.push_str(format!("<td> prob[%]</td>").as_str());
+        for i in 0..k {
+            let prob = session.top_logits[offset + i].prob * 100.0f32;
+            res.push_str(format!("<td>{prob:.2}</td>").as_str());
+        }
+        res.push_str("</tr>");
+
+        it = it + 1;
+        offset = offset + k;
+    }
+    res.push_str("</table></div>");
+    res
+}
+
+
+
+pub fn session_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<Vec<u8>> {
+    let path = req.uri().path();
+    let path_parts: Vec<_> = path.split('/').map(|x| x.to_string()).collect();
+    if path_parts.len() > 2 {
+        let store = Store::open_default()?;
+        let key = path_parts[2].clone();
+        match store.get_json::<InferenceSession>(key)? {
+            Some(value) => {
+                //return Ok(serde_json::json!(&value).to_string().into());
+                let public = render_session_public_to_http(&value);
+                let private = render_session_private_to_http(&value);
+                let res = format!("{public}</br>{private}");
+                return Ok(res.into());
+                //return Ok(value);
+            }
+            None => {}
+        }
+    }
+    Err(anyhow::anyhow!("not found"))
+}
+
+
+pub fn history_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
+    let store = Store::open_default()?;
+    let keys = store.get_keys()?;
+    let mut res = "".to_string();
+    res.push_str("<div>Previous sessions:<br>");
+    res.push_str("<table>");
+    res.push_str("<thead>");
+    res.push_str("<th> Query </th>");
+    res.push_str("<th> Seed </th>");
+    res.push_str("<th> Used tokens </th>");
+    res.push_str("<th> Hash </th>");
+    res.push_str("</thead>");
+
+    for key in keys {
+        match store.get_json::<InferenceSession>(key.clone())? {
+            Some(value) => {
+                res.push_str("<tr>");
+                res.push_str(format!("<td><a href=\"/session/{}\" > {}</a></td>", &key, &value.query).as_str());
+                res.push_str(format!("<td>{}</td>", &value.rng_seed).as_str());
+                res.push_str(format!("<td>{}</td>", &value.sampled_tokens.len()).as_str());
+                res.push_str(format!("<td>{}</td>", &value.hash_sha256).as_str());
+                res.push_str(format!("<td><a href=\"/download/{}\" > Download</a></td>", &key).as_str());
+                res.push_str("</tr>");
+            }
+            _ => {
+
+            }
+        }
+
+    }
+    res.push_str("</table></div>");
+    Ok(res)
+}
+
+pub fn download_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
+    let path = req.uri().path();
+    let path_parts: Vec<_> = path.split('/').map(|x| x.to_string()).collect();
+    if path_parts.len() > 2 {
+        let store = Store::open_default()?;
+        let key = path_parts[2].clone();
+        match store.get_json::<InferenceSession>(key)? {
+            Some(value) => {
+                return Ok(serde_json::json!(&value).to_string().into());
+            }
+            None => {}
+        }
+    }
+    Err(anyhow::anyhow!("not found"))
+
 }

@@ -19,7 +19,7 @@ mod ml {
 
 mod llama;
 
-use crate::llama::llama_infer;
+use crate::llama::{llama_infer, session_handler, history_handler, download_handler};
 use crate::ml::fermyon::spin::graph;
 
 fn parse_content_type(headers: &HeaderMap<HeaderValue>) -> Option<mime::Mime> {
@@ -42,6 +42,28 @@ async fn llama_demo_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<impl 
                 let html_body = llama_handler(req)?;
                 let response = Response::builder().status(200).body(html_body).build();
                 return Ok(response);
+            }
+            "session" => {
+                let contents = session_handler(req)?;
+                let response = Response::builder().status(200).body(contents).build();
+                return Ok(response);
+            }
+            "history" => {
+                let contents = history_handler(req)?;
+                let response = Response::builder().status(200).body(contents).build();
+                return Ok(response);
+            }
+            "download" => {
+                if path_parts.len() > 2 {
+                    let contents = download_handler(req)?;
+                    let key = path_parts[2].clone();
+                    let response = Response::builder()
+                        .header(http::header::CONTENT_DISPOSITION.to_string(),
+                                format!("attachment; filename={}.json", key.as_str()))
+                        .status(200)
+                        .body(contents).build();
+                    return Ok(response);
+                }
             }
             _ => {}
         }
@@ -69,13 +91,15 @@ fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
 
             match load_by_name(&model_name) {
                 Ok(llama_graph) => match graph::Graph::init_execution_context(&llama_graph) {
-                    Ok(context) => llama_infer(&context, &form_data.promt, model_name).unwrap(),
+                    Ok(context) => llama_infer(&context, &form_data.promt, model_name, form_data.rng_seed).unwrap(),
                     Err(err) => err.data(),
                 },
                 Err(err) => err.data(),
             }
         }
-        _ => "".to_string(),
+        _ => {
+            "".to_string()
+        }
     };
     Ok(lamma_add_form(format!("<div>{res}</div>")))
 }
@@ -90,6 +114,10 @@ fn lamma_add_form(mut html_body: String) -> String {
         <p>
             <label>Submit text to llama </label><br/>
             <input type="text" name="promt"/>
+        </p>
+        <p>
+            <label>Random seed for sampling</label><br/>
+            <input type="text" name="rng_seed"/>
         </p>
         <p>
             <label for="target">Choose a inference target:</label>
@@ -118,6 +146,7 @@ struct LlamaFormData {
     promt: String,
     model: String,
     target: String,
+    rng_seed: u64,
 }
 
 fn llama_process_form(mut mp: Multipart<&[u8]>) -> Result<LlamaFormData, anyhow::Error> {
@@ -125,6 +154,7 @@ fn llama_process_form(mut mp: Multipart<&[u8]>) -> Result<LlamaFormData, anyhow:
     let mut promt = "".to_owned();
     let mut target = "CPU".to_string();
     let mut model = "".to_owned();
+    let mut rng_seed = 1337;
 
     while let Some(mut field) = mp.read_entry().unwrap() {
         match field.headers.name.as_ref().to_owned().as_str() {
@@ -135,6 +165,11 @@ fn llama_process_form(mut mp: Multipart<&[u8]>) -> Result<LlamaFormData, anyhow:
             "model" => {
                 model = "".to_string();
                 let _bytes_read = field.data.read_to_string(&mut model).unwrap();
+            }
+            "rng_seed" => {
+                let mut x = "".to_string();
+                let _bytes_read = field.data.read_to_string(&mut x).unwrap();
+                rng_seed = x.parse::<u64>()?;
             }
             "target" => {
                 target = "".to_string();
@@ -148,5 +183,6 @@ fn llama_process_form(mut mp: Multipart<&[u8]>) -> Result<LlamaFormData, anyhow:
         promt,
         model,
         target,
+        rng_seed,
     })
 }
