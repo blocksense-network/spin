@@ -322,6 +322,8 @@ pub struct InferenceSession {
     hash_sha256: String,
 }
 
+
+
 impl InferenceSession {
     pub fn new(model_name: &String, query: &str, rng_seed: u64) -> Self {
         Self {
@@ -376,6 +378,159 @@ impl InferenceSession {
         result[0..8].to_string()
     }
 
+
+
+    fn render_public_to_http(&self) -> String {
+        let query = &self.query;
+        let model = &self.model_name;
+        let response = &self.response;
+        let hash = &self.hash_sha256;
+        let rng_seed = &self.rng_seed;
+        let mut res = format!(
+            "<div>
+            <table>
+            <tr>
+                <td>Query:</td>
+                <td>{query}</td>
+            </tr>
+            <tr>
+                <td>model:</td>
+                <td>{model}</td>
+            </tr>
+            <tr>
+                <td>Response:</td>
+                <td>{response}</td>
+            </tr>
+            <tr>
+                <td>hash_sha256:</td>
+                <td>{hash}</td>
+            </tr>
+            <tr>
+                <td>Rnd seed:</td>
+                <td>{rng_seed}</td>
+            </tr>
+            </table>
+            </div>"
+        );
+        res
+    }
+
+    pub fn render_private_to_http(&self) -> String {
+        let query = &self.query;
+        let model = &self.model_name;
+        let response = &self.response;
+        let hash = &self.hash_sha256;
+        let rng_seed = &self.rng_seed;
+        let mut res = "<div><table><thead><th>Iteration</th></thead>".to_string();
+        let mut offset = 0;
+        let mut it = 0;
+        if self.sampled_tokens.len() > 0 {
+            let k = self.top_logits.len() / self.sampled_tokens.len();
+            for t in &self.sampled_tokens {
+                res.push_str("<tr>");
+                res.push_str(format!("<td><b>{it}</b></td>").as_str());
+                for i in 0..k {
+                    let token_id = self.top_logits[offset + i].token_id;
+                    if token_id != *t {
+                        res.push_str(format!("<td>{token_id}</td>").as_str());
+                    } else {
+                        res.push_str(format!("<td><b>{token_id}</b></td>").as_str());
+                    }
+                }
+                res.push_str("</tr>");
+
+                res.push_str("<tr>");
+                res.push_str(format!("<td> prob[%]</td>").as_str());
+                for i in 0..k {
+                    let prob = self.top_logits[offset + i].prob * 100.0f32;
+                    res.push_str(format!("<td>{prob:.2}</td>").as_str());
+                }
+                res.push_str("</tr>");
+
+                it = it + 1;
+                offset = offset + k;
+            }
+        }
+        res.push_str("</table></div>");
+        res
+    }
+
+
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct VerificationSession {
+    model_name: String,
+    query: String,
+    response: String,
+    sampled_tokens: Vec<u32>,
+    top_logits: Vec<TokenWithProbabily>,
+    hash_sha256: String,
+    diff: Vec<f32>,
+    total_diff: f32,
+}
+
+impl VerificationSession {
+    pub fn new(old_session: &InferenceSession) -> Self {
+        Self {
+            model_name: old_session.model_name.clone(),
+            query: old_session.query.to_string(),
+            response: old_session.response.to_string(),
+            sampled_tokens: old_session.sampled_tokens.clone(),
+            top_logits: Vec::new(),
+            hash_sha256: "".to_string(),
+            diff: Vec::new(),
+            total_diff: 0.0f32,
+        } 
+    }
+
+    pub fn generate_key(&self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(self.model_name.clone().into_bytes());
+        hasher.update(self.query.clone().into_bytes());
+        let token_ids: Vec<u8> = self
+            .sampled_tokens
+            .iter()
+            .copied()
+            .flat_map(|x| u32::to_le_bytes(x).into_iter())
+            .collect();
+
+        hasher.update(token_ids);
+        let result = hex::encode(hasher.finalize());
+        result[0..8].to_string()
+    }
+
+    pub fn add_top_tokens(&mut self, top_tokens: Vec<TokenWithProbabily>) {
+        self.top_logits.extend_from_slice(&top_tokens);
+    }
+
+    pub fn finish(&mut self) -> String {
+        let token_ids: Vec<u8> = self
+            .top_logits
+            .iter()
+            .copied()
+            .flat_map(|x| u32::to_le_bytes(x.token_id).into_iter())
+            .collect();
+        let token_probs: Vec<u8> = self
+            .top_logits
+            .iter()
+            .copied()
+            .flat_map(|x| f32::to_le_bytes(x.prob).into_iter())
+            .collect();
+
+        let mut hasher = Sha256::new();
+        hasher.update(self.model_name.clone().into_bytes());
+        hasher.update(self.query.clone().into_bytes());
+        hasher.update(self.response.clone().into_bytes());
+     //   hasher.update(u64::to_le_bytes(self.rng_seed));
+        hasher.update(token_ids);
+        hasher.update(token_probs);
+        // read hash digest and consume hasher
+        let result = hasher.finalize();
+        self.hash_sha256 = hex::encode(result);
+        self.hash_sha256.clone()
+    }
+
     fn diff(a: f32, b :f32) -> f32 {
         (a - b) * (a - b)
     }
@@ -415,8 +570,21 @@ impl InferenceSession {
         }
         res
     }
-}
 
+    fn fill_diff(&mut self, old_session: &InferenceSession) {
+        self.diff = Vec::new();
+        let mut total = 0.0f32;
+        for i in 0..old_session.sampled_tokens.len() {
+            let diff = self.compute_diff(i, old_session);
+            println!("iteration = {i} diff = {diff}");
+            self.diff.push(diff);
+            total += diff;
+        }
+        self.total_diff = total;
+        println!("Total diff {total}");
+        
+    }
+}
 pub fn llama_infer(
     context: &GraphExecutionContext,
     promt: &str,
@@ -479,15 +647,13 @@ pub fn llama_infer(
                     );
                     session.add_token(token_id, top_tokens);
                     session.response = response;
-                    //let j = serde_json::json!(&session);
-                    //println!("{}", j.to_string());
-                    let v = store.set_json::<InferenceSession>(key.clone(), &session);
-                    println!("updated {:?}", v);
+                    let _ = store.set_json::<InferenceSession>(key.clone(), &session);
+                    
                 } else {
                     session.finish();
                     res.push_str(format!("<br> hash_sha256 = {}", session.hash_sha256).as_str());
-                    let v = store.set_json::<InferenceSession>(key.clone(), &session);
-                    println!("finished {:?}", v);
+                    let _ = store.set_json::<InferenceSession>(key.clone(), &session);
+                    println!("finished -> hash_sha256 = {}", session.hash_sha256);
                     break;
                 }
             }
@@ -519,7 +685,8 @@ pub fn llama_verify(
         .unwrap();
     inference::GraphExecutionContext::compute(&context).unwrap();
 
-    let mut session = InferenceSession::new(&old_session.model_name, &old_session.query, u64::MAX);
+    //let mut session = InferenceSession::new(&old_session.model_name, &old_session.query, u64::MAX);
+    let mut session = VerificationSession::new(&old_session);
 
     let mut res = "".to_string();
     let eos_token_id = extract_eos_token_id(&context)?;
@@ -548,9 +715,9 @@ pub fn llama_verify(
                     .unwrap();
                     inference::GraphExecutionContext::compute(&context).unwrap();
                     let response = extract_response(&context)?;
-                    session.add_token(token_id, top_tokens);
-                    session.response = response;
-                    let v = store.set_json::<InferenceSession>(key.clone(), &session);
+                    session.add_top_tokens(top_tokens);
+                    //session.response = response;
+                    let v = store.set_json::<VerificationSession>(key.clone(), &session);
             }
             Err(e) => {
                 res.push_str(format!("<br> error = {e}").as_str());
@@ -560,95 +727,19 @@ pub fn llama_verify(
 
     session.finish();
     res.push_str(format!("<br> hash_sha256 = {}", session.hash_sha256).as_str());
-    let v = store.set_json::<InferenceSession>(key.clone(), &session);
+    let v = store.set_json::<VerificationSession>(key.clone(), &session);
     println!("finished {:?}", v);
 
-    let mut total = 0.0f32;
-    for i in 0..old_session.sampled_tokens.len() {
-        let diff = session.compute_diff(i, old_session);
-        println!(" iteration = {i} diff = {diff}");
-        total += diff;
-    }
-    println!("Total diff {total}");
+    println!("compute diff ... ");
+    session.fill_diff(&old_session);
+    let v = store.set_json::<VerificationSession>(key.clone(), &session);
+    
+
+
 
     Ok(res)
 }
 
-
-fn render_session_public_to_http(session: &InferenceSession) -> String {
-    let query = &session.query;
-    let model = &session.model_name;
-    let response = &session.response;
-    let hash = &session.hash_sha256;
-    let rng_seed = &session.rng_seed;
-    let mut res = format!(
-        "<div>
-        <table>
-        <tr>
-            <td>Query:</td>
-            <td>{query}</td>
-        </tr>
-        <tr>
-            <td>model:</td>
-            <td>{model}</td>
-        </tr>
-        <tr>
-            <td>Response:</td>
-            <td>{response}</td>
-        </tr>
-        <tr>
-            <td>hash_sha256:</td>
-            <td>{hash}</td>
-        </tr>
-        <tr>
-            <td>Rnd seed:</td>
-            <td>{rng_seed}</td>
-        </tr>
-        </table>
-        </div>"
-    );
-    res
-}
-
-fn render_session_private_to_http(session: &InferenceSession) -> String {
-    let query = &session.query;
-    let model = &session.model_name;
-    let response = &session.response;
-    let hash = &session.hash_sha256;
-    let rng_seed = &session.rng_seed;
-    let mut res = "<div><table><thead><th>Iteration</th></thead>".to_string();
-    let mut offset = 0;
-    let mut it = 0;
-    if session.sampled_tokens.len() > 0 {
-        let k = session.top_logits.len() / session.sampled_tokens.len();
-        for t in &session.sampled_tokens {
-            res.push_str("<tr>");
-            res.push_str(format!("<td><b>{it}</b></td>").as_str());
-            for i in 0..k {
-                let token_id = session.top_logits[offset + i].token_id;
-                if token_id != *t {
-                    res.push_str(format!("<td>{token_id}</td>").as_str());
-                } else {
-                    res.push_str(format!("<td><b>{token_id}</b></td>").as_str());
-                }
-            }
-            res.push_str("</tr>");
-
-            res.push_str("<tr>");
-            res.push_str(format!("<td> prob[%]</td>").as_str());
-            for i in 0..k {
-                let prob = session.top_logits[offset + i].prob * 100.0f32;
-                res.push_str(format!("<td>{prob:.2}</td>").as_str());
-            }
-            res.push_str("</tr>");
-
-            it = it + 1;
-            offset = offset + k;
-        }
-    }
-    res.push_str("</table></div>");
-    res
-}
 
 
 
@@ -658,17 +749,19 @@ pub fn session_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<Vec<u8>> {
     if path_parts.len() > 2 {
         let store = Store::open_default()?;
         let key = path_parts[2].clone();
-        match store.get_json::<InferenceSession>(key)? {
-            Some(value) => {
-                //return Ok(serde_json::json!(&value).to_string().into());
-                let public = render_session_public_to_http(&value);
-                let private = render_session_private_to_http(&value);
-                let res = format!("{public}</br>{private}");
-                return Ok(res.into());
-                //return Ok(value);
-            }
-            None => {}
+        if let Ok(Some(session)) = store.get_json::<InferenceSession>(key.clone()) {
+            let public = session.render_public_to_http();
+            let private = session.render_private_to_http();
+            let res = format!("{public}</br>{private}");
+            return Ok(res.into());
         }
+        /*if let Ok(Some(value)) = store.get_json::<VerificationSession>(key.clone()) {
+            let public = render_session_public_to_http(&value);
+            let private = render_session_private_to_http(&value);
+            let res = format!("{public}</br>{private}");
+            return Ok(res.into());
+        }*/
+
     }
     Err(anyhow::anyhow!("not found"))
 }
@@ -689,23 +782,33 @@ pub fn history_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
     res.push_str("</thead>");
 
     for key in keys {
-        match store.get_json::<InferenceSession>(key.clone())? {
-            Some(value) => {
-                res.push_str("<tr>");
-                res.push_str(format!("<td>{}</td>", &value.model_name).as_str());
-                res.push_str(format!("<td><a href=\"/session/{}\" > {}</a></td>", &key, &value.query).as_str());
-                res.push_str(format!("<td>{}</td>", &value.rng_seed).as_str());
-                res.push_str(format!("<td>{}</td>", &value.sampled_tokens.len()).as_str());
-                res.push_str(format!("<td>{}</td>", &value.hash_sha256).as_str());
-                res.push_str(format!("<td><a href=\"/download/{}\" > Download</a></td>", &key).as_str());
-                res.push_str(format!("<td><a href=\"/verify/{}\" > Verify</a></td>", &key).as_str());
-                res.push_str("</tr>");
-            }
-            _ => {
-
-            }
+        if let Ok(Some(value)) = store.get_json::<InferenceSession>(key.clone()) {
+            res.push_str("<tr>");
+            res.push_str(format!("<td>{}</td>", &value.model_name).as_str());
+            res.push_str(format!("<td><a href=\"/session/{}\" > {}</a></td>", &key, &value.query).as_str());
+            res.push_str(format!("<td>{}</td>", &value.rng_seed).as_str());
+            res.push_str(format!("<td>{}</td>", &value.sampled_tokens.len()).as_str());
+            res.push_str(format!("<td>{}</td>", &value.hash_sha256).as_str());
+            res.push_str(format!("<td><a href=\"/download/{}\" > Download</a></td>", &key).as_str());
+            res.push_str(format!("<td><a href=\"/verify/{}\" > Verify</a></td>", &key).as_str());
+            res.push_str("</tr>");
         }
-
+        if let Ok(Some(value)) = store.get_json::<VerificationSession>(key.clone()) {
+            res.push_str("<tr>");
+            res.push_str(format!("<td>{}</td>", &value.model_name).as_str());
+            res.push_str(format!("<td><a href=\"/session/{}\" > {}</a></td>", &key, &value.query).as_str());
+            let v = if value.total_diff > value.sampled_tokens.len() as f32 * 1.0e-6f32 {
+                "Fake"
+            } else {
+                "OK"
+            };
+            res.push_str(format!("<td> {v} </td>").as_str());
+            res.push_str(format!("<td>{}</td>", &value.sampled_tokens.len()).as_str());
+            res.push_str(format!("<td>{}</td>", &value.hash_sha256).as_str());
+            res.push_str(format!("<td><a href=\"/download/{}\" > Download</a></td>", &key).as_str());
+            res.push_str(format!("<td>{}</td>", &value.total_diff).as_str());
+            res.push_str("</tr>");
+        }
     }
     res.push_str("</table></div>");
     Ok(res)
