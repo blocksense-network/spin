@@ -19,7 +19,7 @@ mod ml {
 
 mod llama;
 
-use crate::llama::{llama_infer, session_handler, history_handler, download_handler};
+use crate::llama::{llama_infer, session_handler, history_handler, download_handler, verify_handler};
 use crate::ml::fermyon::spin::graph;
 
 fn parse_content_type(headers: &HeaderMap<HeaderValue>) -> Option<mime::Mime> {
@@ -52,6 +52,11 @@ async fn llama_demo_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<impl 
                 let contents = history_handler(req)?;
                 let response = Response::builder().status(200).body(contents).build();
                 return Ok(response);
+            }
+            "verify" => {
+                let contents = verify_handler(req)?;
+                let response = Response::builder().status(200).body(contents).build();
+                return Ok(response);        
             }
             "download" => {
                 if path_parts.len() > 2 {
@@ -87,11 +92,17 @@ fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
             let form_data = llama_process_form(mp).unwrap();
 
             use core::result::Result::Ok;
-            let model_name = format!("llm:{}", form_data.model);
+            let model_name_parts: Vec<_> = form_data.model.split(':').map(|x| x.to_string()).collect();
+            let model_name = format!("llm:{}", model_name_parts[0]);
+            let record_model_name = if model_name_parts.len() > 1 {
+                format!("llm:{}", model_name_parts[1])
+            } else {
+                model_name.clone()
+            };
 
             match load_by_name(&model_name) {
                 Ok(llama_graph) => match graph::Graph::init_execution_context(&llama_graph) {
-                    Ok(context) => llama_infer(&context, &form_data.promt, model_name, form_data.rng_seed).unwrap(),
+                    Ok(context) => llama_infer(&context, &form_data.promt, record_model_name, form_data.rng_seed).unwrap(),
                     Err(err) => err.data(),
                 },
                 Err(err) => err.data(),
@@ -129,7 +140,10 @@ fn lamma_add_form(mut html_body: String) -> String {
         <p>
         <label for="model">Choose a inference network:</label>
         <select name="model" id="model">
-            <option value="open_llama_3b-f16">open_llama_3b-f16</option>
+            <option value="open_llama_3b-f16.bin">open_llama_3b-f16.bin</option>
+            <option value="open_llama_7b-f16.bin">open_llama_7b-f16.bin</option>
+            <option value="open_llama_3b-f16.bin:open_llama_7b-f16.bin">open_llama_3b-f16.bin:open_llama_7b-f16.bin</option>
+            <option value="llama-7b.ggmlv3.q8_0.bin">llama-7b.ggmlv3.q8_0.bin</option>
         </select> 
         </p>
         <p>

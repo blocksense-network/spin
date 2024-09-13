@@ -5,7 +5,9 @@ use crate::tensor::TensorType;
 */
 
 use crate::ml::fermyon::spin::inference::GraphExecutionContext;
-use crate::ml::fermyon::spin::{errors, inference, tensor};
+use crate::ml::fermyon::spin::{errors, inference, tensor, graph};
+
+use crate::load_by_name;
 
 use crate::Store;
 use rand_chacha;
@@ -304,13 +306,13 @@ fn sample_next_token(
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
-struct TokenWithProbabily {
+pub struct TokenWithProbabily {
     token_id: u32,
     prob: f32,
 }
 
 #[derive(Serialize, Deserialize)]
-struct InferenceSession {
+pub struct InferenceSession {
     model_name: String,
     query: String,
     response: String,
@@ -372,6 +374,46 @@ impl InferenceSession {
         hasher.update(u64::to_le_bytes(self.rng_seed));
         let result = hex::encode(hasher.finalize());
         result[0..8].to_string()
+    }
+
+    fn diff(a: f32, b :f32) -> f32 {
+        (a - b) * (a - b)
+    }
+
+    pub fn compute_diff(&self, token_index: usize, oth: &InferenceSession) -> f32 {
+        let k = self.top_logits.len() / self.sampled_tokens.len();
+        let offset = token_index * k;
+        let mut res = 0.0f32;
+        for i in 0..k {
+            let t = self.top_logits[offset + i].token_id;
+            let p = self.top_logits[offset + i].prob;
+            let mut found = false;
+            for j in 0..k {
+                if oth.top_logits[offset + j].token_id == t {
+                    res += Self::diff(oth.top_logits[offset + j].prob, p);
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                res += Self::diff(p, 0.0);
+            }
+        }
+        for i in 0..k {
+            let t = oth.top_logits[offset + i].token_id;
+            let p = oth.top_logits[offset + i].prob;
+            let mut found = false;
+            for j in 0..k {
+                if self.top_logits[offset + j].token_id == t {
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                res += Self::diff(p, 0.0);
+            }
+        }
+        res
     }
 }
 
@@ -459,6 +501,80 @@ pub fn llama_infer(
 }
 
 
+
+pub fn llama_verify(
+    context: &GraphExecutionContext,
+    old_session: &InferenceSession,
+) -> std::result::Result<String, Box<dyn std::error::Error>> {
+    let query_tensor_data = old_session.query.to_owned().into_bytes();
+    let query_tensor_type = tensor::TensorType::U8;
+    let query_tensor_dimensions: Vec<u32> = vec![1, query_tensor_data.len() as u32];
+    let query_tensor_id = tensor::Tensor::new(
+        &query_tensor_dimensions,
+        query_tensor_type,
+        &query_tensor_data,
+    );
+    let query_input_name = "query";
+    inference::GraphExecutionContext::set_input(&context, query_input_name, query_tensor_id)
+        .unwrap();
+    inference::GraphExecutionContext::compute(&context).unwrap();
+
+    let mut session = InferenceSession::new(&old_session.model_name, &old_session.query, u64::MAX);
+
+    let mut res = "".to_string();
+    let eos_token_id = extract_eos_token_id(&context)?;
+    let store = Store::open_default()?;
+    let key = session.generate_key();
+    println!("Verification with key = {key}");
+
+    for i in 0..old_session.sampled_tokens.len() {
+        match sample_next_token(context, 1.0f32) {
+            Ok((_, top_tokens)) => {
+                let token_id = old_session.sampled_tokens[i];
+                    let token_tensor_data = token_id.to_le_bytes().to_vec();
+                    let token_tensor_type = tensor::TensorType::I32;
+                    let token_tensor_dimensions: Vec<u32> = vec![1, 1];
+                    let token_tensor_id = tensor::Tensor::new(
+                        &token_tensor_dimensions,
+                        token_tensor_type,
+                        &token_tensor_data,
+                    );
+                    let token_input_name = "next_token";
+                    inference::GraphExecutionContext::set_input(
+                        &context,
+                        token_input_name,
+                        token_tensor_id,
+                    )
+                    .unwrap();
+                    inference::GraphExecutionContext::compute(&context).unwrap();
+                    let response = extract_response(&context)?;
+                    session.add_token(token_id, top_tokens);
+                    session.response = response;
+                    let v = store.set_json::<InferenceSession>(key.clone(), &session);
+            }
+            Err(e) => {
+                res.push_str(format!("<br> error = {e}").as_str());
+            }
+        }
+    }
+
+    session.finish();
+    res.push_str(format!("<br> hash_sha256 = {}", session.hash_sha256).as_str());
+    let v = store.set_json::<InferenceSession>(key.clone(), &session);
+    println!("finished {:?}", v);
+
+    let mut total = 0.0f32;
+    for i in 0..old_session.sampled_tokens.len() {
+        let diff = session.compute_diff(i, old_session);
+        println!(" iteration = {i} diff = {diff}");
+        total += diff;
+    }
+    println!("Total diff {total}");
+
+    Ok(res)
+}
+
+
 fn render_session_public_to_http(session: &InferenceSession) -> String {
     let query = &session.query;
     let model = &session.model_name;
@@ -503,30 +619,32 @@ fn render_session_private_to_http(session: &InferenceSession) -> String {
     let mut res = "<div><table><thead><th>Iteration</th></thead>".to_string();
     let mut offset = 0;
     let mut it = 0;
-    let k = session.top_logits.len() / session.sampled_tokens.len();
-    for t in &session.sampled_tokens {
-        res.push_str("<tr>");
-        res.push_str(format!("<td><b>{it}</b></td>").as_str());
-        for i in 0..k {
-            let token_id = session.top_logits[offset + i].token_id;
-            if token_id != *t {
-                res.push_str(format!("<td>{token_id}</td>").as_str());
-            } else {
-                res.push_str(format!("<td><b>{token_id}</b></td>").as_str());
+    if session.sampled_tokens.len() > 0 {
+        let k = session.top_logits.len() / session.sampled_tokens.len();
+        for t in &session.sampled_tokens {
+            res.push_str("<tr>");
+            res.push_str(format!("<td><b>{it}</b></td>").as_str());
+            for i in 0..k {
+                let token_id = session.top_logits[offset + i].token_id;
+                if token_id != *t {
+                    res.push_str(format!("<td>{token_id}</td>").as_str());
+                } else {
+                    res.push_str(format!("<td><b>{token_id}</b></td>").as_str());
+                }
             }
-        }
-        res.push_str("</tr>");
+            res.push_str("</tr>");
 
-        res.push_str("<tr>");
-        res.push_str(format!("<td> prob[%]</td>").as_str());
-        for i in 0..k {
-            let prob = session.top_logits[offset + i].prob * 100.0f32;
-            res.push_str(format!("<td>{prob:.2}</td>").as_str());
-        }
-        res.push_str("</tr>");
+            res.push_str("<tr>");
+            res.push_str(format!("<td> prob[%]</td>").as_str());
+            for i in 0..k {
+                let prob = session.top_logits[offset + i].prob * 100.0f32;
+                res.push_str(format!("<td>{prob:.2}</td>").as_str());
+            }
+            res.push_str("</tr>");
 
-        it = it + 1;
-        offset = offset + k;
+            it = it + 1;
+            offset = offset + k;
+        }
     }
     res.push_str("</table></div>");
     res
@@ -563,6 +681,7 @@ pub fn history_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
     res.push_str("<div>Previous sessions:<br>");
     res.push_str("<table>");
     res.push_str("<thead>");
+    res.push_str("<th> Model </th>");
     res.push_str("<th> Query </th>");
     res.push_str("<th> Seed </th>");
     res.push_str("<th> Used tokens </th>");
@@ -573,11 +692,13 @@ pub fn history_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
         match store.get_json::<InferenceSession>(key.clone())? {
             Some(value) => {
                 res.push_str("<tr>");
+                res.push_str(format!("<td>{}</td>", &value.model_name).as_str());
                 res.push_str(format!("<td><a href=\"/session/{}\" > {}</a></td>", &key, &value.query).as_str());
                 res.push_str(format!("<td>{}</td>", &value.rng_seed).as_str());
                 res.push_str(format!("<td>{}</td>", &value.sampled_tokens.len()).as_str());
                 res.push_str(format!("<td>{}</td>", &value.hash_sha256).as_str());
                 res.push_str(format!("<td><a href=\"/download/{}\" > Download</a></td>", &key).as_str());
+                res.push_str(format!("<td><a href=\"/verify/{}\" > Verify</a></td>", &key).as_str());
                 res.push_str("</tr>");
             }
             _ => {
@@ -604,5 +725,37 @@ pub fn download_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
         }
     }
     Err(anyhow::anyhow!("not found"))
+}
 
+
+fn verify(session: &InferenceSession) -> anyhow::Result<String> {
+    let model_name = session.model_name.clone();
+    //let promt = session.query.clone();
+    //let rng_seed = session.rng_seed;
+    match load_by_name(&model_name) {
+        Ok(llama_graph) => match graph::Graph::init_execution_context(&llama_graph) {
+            Ok(context) => Ok(llama_verify(&context, session).unwrap()),
+            Err(err) => Err(anyhow::anyhow!(err.data())),
+        },
+        Err(err) => Err(anyhow::anyhow!(err.data())),
+        
+    }   
+}
+
+pub fn verify_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
+    let path = req.uri().path();
+    let path_parts: Vec<_> = path.split('/').map(|x| x.to_string()).collect();
+    if path_parts.len() > 2 {
+        let store = Store::open_default()?;
+        let key = path_parts[2].clone();
+        match store.get_json::<InferenceSession>(key)? {
+            Some(session) => {
+                return verify(&session);
+            }
+            None => {}
+        }
+    }
+    Err(anyhow::anyhow!("not found"))
+
+    
 }
