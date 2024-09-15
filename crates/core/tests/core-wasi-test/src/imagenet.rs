@@ -1,4 +1,4 @@
-use crate::ml::test::test::{graph, inference, tensor};
+use crate::ml::test::test::{graph, inference, tensor, errors};
 use image2tensor::convert_image_to_tensor_bytes;
 
 use crate::imagenet_classes;
@@ -84,7 +84,7 @@ pub fn imagenet_openvino_test(
     };
     let context = {
         let start_for_elapsed_macro = std::time::Instant::now();
-        let context = graph::Graph::init_execution_context(&imagenet_graph).unwrap();
+        let context = graph::Graph::init_execution_context(&imagenet_graph).map_err(|e| errors::Error::data(&e) ).expect("XXXXXXXX -> init_execution_context failed");
         let elapsed = start_for_elapsed_macro.elapsed();
         eprintln!(
             "Created context with ID: {:?} {}",

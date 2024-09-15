@@ -3240,6 +3240,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hex-literal"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
+
+[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5277,8 +5283,19 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "24bd3a7ef39968e6a4f1b1206c1c876f9bd50cf739ccbcd69f8539bbac5dcc7a"
 dependencies = [
- "openvino-finder",
- "openvino-sys",
+ "openvino-finder 0.6.0",
+ "openvino-sys 0.6.0",
+ "thiserror",
+]
+
+[[package]]
+name = "openvino"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aee013796927eec6012a344f10ecdc06bf26de79c626a2395e3f115464907ef6"
+dependencies = [
+ "openvino-finder 0.7.2",
+ "openvino-sys 0.7.2",
  "thiserror",
 ]
 
@@ -5293,6 +5310,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "openvino-finder"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af4c6841df4cd60fef743015f3348f81b6b225bd255ed0c4cab6e8c479e45eaa"
+dependencies = [
+ "cfg-if",
+ "log",
+]
+
+[[package]]
 name = "openvino-sys"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5301,7 +5328,19 @@ dependencies = [
  "env_logger",
  "libloading",
  "once_cell",
- "openvino-finder",
+ "openvino-finder 0.6.0",
+]
+
+[[package]]
+name = "openvino-sys"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f62fc2bd6882f2300a6b5017eaad292586d70995d333582aabcf1f1121cd147c"
+dependencies = [
+ "env_logger",
+ "libloading",
+ "once_cell",
+ "openvino-finder 0.7.2",
 ]
 
 [[package]]
@@ -5336,6 +5375,33 @@ checksum = "9aa2b01e1d916879f73a53d01d1d6cee68adbb31d6d9177a8cfce093cced1d50"
 dependencies = [
  "futures-core",
  "pin-project-lite",
+]
+
+[[package]]
+name = "ort"
+version = "2.0.0-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86d83095ae3c1258738d70ae7a06195c94d966a8e546f0d3609dc90885fb61f5"
+dependencies = [
+ "js-sys",
+ "libloading",
+ "ort-sys",
+ "thiserror",
+ "tracing",
+ "web-sys",
+]
+
+[[package]]
+name = "ort-sys"
+version = "2.0.0-rc.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f2f6427193c808010b126bef45ebd33f8dee43770223a1200f84d3734d6c656"
+dependencies = [
+ "flate2",
+ "pkg-config",
+ "sha2",
+ "tar",
+ "ureq",
 ]
 
 [[package]]
@@ -6759,6 +6825,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls"
+version = "0.23.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebbbdb961df0ad3f2652da8f3fdc4b36122f568f968f45ad3316f26c025c677b"
+dependencies = [
+ "log",
+ "once_cell",
+ "ring 0.17.8",
+ "rustls-pki-types",
+ "rustls-webpki 0.102.2",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
 name = "rustls-ffi"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7424,6 +7505,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "socks"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0c3dbbd9ae980613c6dd8e28a9407b50509d3803b57624d5dfe8315218cd58b"
+dependencies = [
+ "byteorder",
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "spdx"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7533,6 +7625,7 @@ dependencies = [
  "spin-loader",
  "spin-locked-app",
  "spin-manifest",
+ "spin-ml",
  "spin-oci",
  "spin-plugins",
  "spin-telemetry",
@@ -7613,7 +7706,7 @@ dependencies = [
  "futures",
  "http 1.1.0",
  "io-extras",
- "openvino",
+ "openvino 0.6.0",
  "rustix 0.37.27",
  "spin-componentize",
  "spin-telemetry",
@@ -7867,6 +7960,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "spin-ml"
+version = "2.7.0-pre0"
+dependencies = [
+ "anyhow",
+ "curl",
+ "hex-literal",
+ "openvino 0.7.2",
+ "ort",
+ "sha1 0.10.6",
+ "spin-app",
+ "spin-core",
+ "spin-world",
+ "table",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "spin-oci"
 version = "2.7.0-pre0"
 dependencies = [
@@ -8092,6 +8203,7 @@ dependencies = [
  "spin-llm-remote-http",
  "spin-loader",
  "spin-manifest",
+ "spin-ml",
  "spin-outbound-networking",
  "spin-sqlite",
  "spin-sqlite-inproc",
@@ -9261,6 +9373,22 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
+
+[[package]]
+name = "ureq"
+version = "2.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72139d247e5f97a3eff96229a7ae85ead5328a39efe76f8bf5a06313d505b6ea"
+dependencies = [
+ "base64 0.22.0",
+ "log",
+ "once_cell",
+ "rustls 0.23.7",
+ "rustls-pki-types",
+ "socks",
+ "url",
+ "webpki-roots 0.26.1",
+]
 
 [[package]]
 name = "url"

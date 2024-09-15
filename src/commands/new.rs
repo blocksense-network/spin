@@ -8,7 +8,6 @@ use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use itertools::Itertools;
 use path_absolutize::Absolutize;
-use tokio;
 
 use spin_templates::{RunOptions, Template, TemplateManager, TemplateVariantInfo};
 

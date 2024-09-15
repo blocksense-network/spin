@@ -38,6 +38,7 @@ spin-sqlite = { path = "../sqlite" }
 spin-sqlite-inproc = { path = "../sqlite-inproc" }
 spin-sqlite-libsql = { path = "../sqlite-libsql" }
 spin-world = { path = "../world" }
+spin-ml = {path = "../ml"}
 spin-llm = { path = "../llm" }
 spin-llm-local = { path = "../llm-local", optional = true }
 spin-llm-remote-http = { path = "../llm-remote-http" }
