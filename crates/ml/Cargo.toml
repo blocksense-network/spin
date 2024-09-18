@@ -19,6 +19,7 @@ openvino = { version = "0.7.2", features = ["runtime-linking",], optional = true
 curl = { version = "^0.4", features = ["rustls"] }
 sha1 = "^0.10"
 hex-literal = "^0.4"
+hex =  "^0.4"
 
 tracing = { workspace = true }
 

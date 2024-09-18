@@ -7879,6 +7879,7 @@ version = "2.7.0-pre0"
 dependencies = [
  "anyhow",
  "curl",
+ "hex",
  "hex-literal",
  "llm",
  "openvino",

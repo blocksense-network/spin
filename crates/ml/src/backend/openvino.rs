@@ -8,7 +8,7 @@ use crate::backend::BackendGraph;
 
 use super::{BackendExecutionContext, BackendInner, TensorId};
 
-use crate::imagenet_download::{imagenet_check_models, imagenet_download, OpenvinoModel};
+use crate::model_files::ModelFiles;
 use openvino::{DeviceType, ElementType, Shape, Tensor as OvTensor};
 
 use std::path::PathBuf;
@@ -80,14 +80,32 @@ impl BackendInner for OpenvinoBackend {
             if let Some(target) = map_string_to_execution_target(&parts[2]) {
                 let model_name = &parts[1];
                 if model_name == "imagenet" {
-                    let model = self.imagenet_builders()?;
-                    let builders = vec![model.xml, model.weights];
-                    return self.load(
-                        builders,
-                        target,
-                        GraphEncoding::Openvino,
-                        Some(model_name.clone()),
-                    );
+                    if let Some(dir) = &self.state_dir {
+                        let model_files = ModelFiles {
+                            name: model_name.to_string(),
+                            encoding: GraphEncoding::Openvino,
+                            files: vec!["model.xml".to_string(), "model.bin".to_string()],
+                            sources: vec![
+                                        "https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/model.xml".to_string(),
+                                        "https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/model.bin".to_string(),
+                            ],
+                            hashes: vec![
+                                "sha1:380a4621bf51ae357cb0eaafab203f214dbb036c".to_string(), 
+                                "sha1:a50b3bbd47369e306002193fd18847a186c0bcf4".to_string(),
+                            ],
+                        };
+                        let builders = model_files.builders(&dir)?;
+                        return self.load(
+                            builders,
+                            target,
+                            GraphEncoding::Openvino,
+                            Some(model_name.clone()),
+                        );
+                    } else {
+                        return Err(anyhow!(
+                            "state_dir is not set, therefore there is no place to download models"
+                        ));
+                    }
                 }
             }
         }
@@ -170,23 +188,6 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
     }
 }
 
-impl OpenvinoBackend {
-    fn imagenet_builders(&mut self) -> Result<OpenvinoModel, anyhow::Error> {
-        if let Some(dir) = &self.state_dir {
-            match imagenet_check_models(dir) {
-                Ok(model) => Ok(model),
-                Err(_) => {
-                    imagenet_download(dir)?;
-                    Ok(imagenet_check_models(dir).map_err(|e| anyhow!("{:?}", e))?)
-                }
-            }
-        } else {
-            Err(anyhow!(
-                "state_dir is not set, therefore there is no place to download models"
-            ))
-        }
-    }
-}
 
 /// Return the execution target string expected by OpenVINO from the
 /// `ExecutionTarget` enum provided by wasi-nn.
