@@ -105,6 +105,11 @@ interface graph {
     /// this function is **implementation-specific**. This allows hosts to choose name schemes that
     /// range from simple to complex (e.g., URLs?) and caching mechanisms of various kinds.
     load-by-name: func(name: string) -> result<graph, error>;
+
+
+    /// Register a `graph` by name, files and where to download them from internet
+    register-by-name: func(name: string, encoding: graph-encoding, files: list<string>, sources: list<list<string>>, hashes: list<string>) -> result<_, error>;
+
 }
 
 /// An inference "session" is encapsulated by a `graph-execution-context`. This structure binds a

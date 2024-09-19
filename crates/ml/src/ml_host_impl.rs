@@ -8,12 +8,14 @@ use ml_wit::inference::GraphExecutionContext;
 use ml_wit::{errors, graph, inference, tensor};
 
 use spin_core::async_trait;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use spin_core::wasmtime::component::Resource;
 
 use crate::backend::{BackendExecutionContext, BackendGraph};
 use crate::backend::{BackendInner, TensorId};
+use crate::model_files::ModelFiles;
 
 pub struct GraphInternalData(pub Box<dyn BackendGraph>);
 
@@ -39,6 +41,7 @@ pub struct MLHostImpl {
 
     pub executions: table::Table<ExecutionContext>,
     pub backends: Vec<Box<dyn BackendInner>>,
+    pub model_files: HashMap<String, ModelFiles>,
 }
 
 impl MLHostImpl {
@@ -330,11 +333,11 @@ impl errors::Host for MLHostImpl {}
 impl graph::Host for MLHostImpl {
     async fn load(
         &mut self,
-        builders: Vec<GraphBuilder>,
+        _builders: Vec<GraphBuilder>,
         graph_encoding: GraphEncoding,
-        target: ExecutionTarget,
+        _target: ExecutionTarget,
     ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
-        for backend in self.backends.iter_mut() {
+        /*for backend in self.backends.iter_mut() {
             if backend.encoding() == graph_encoding {
                 match backend.load(builders, target, graph_encoding, None) {
                     Ok(graph_internal_data) => {
@@ -353,7 +356,7 @@ impl graph::Host for MLHostImpl {
                     }
                 }
             }
-        }
+        }*/
         Err(anyhow!(
             "[graph::Host] fn load -> graph_encoding = {graph_encoding:?} is not supported "
         ))
@@ -364,25 +367,39 @@ impl graph::Host for MLHostImpl {
         model_name: String,
     ) -> Result<Result<Resource<Graph>, Resource<errors::Error>>, anyhow::Error> {
         let parts: Vec<_> = model_name.split(':').map(|x| x.to_string()).collect();
-        if parts.len() > 1 {
-            if let Some(graph_encoding) = map_string_to_graph_encoding(&parts[0]) {
-                for backend in self.backends.iter_mut() {
-                    if backend.encoding() == graph_encoding {
-                        match backend.load_by_name(model_name.clone()) {
-                            Ok(graph_internal_data) => {
-                                return MLHostImpl::new_graph(
-                                    &mut self.graphs,
-                                    &mut self.errors,
-                                    graph_internal_data,
-                                );
-                            }
-                            Err(err) => {
-                                return Ok(Err(MLHostImpl::new_error(
-                                    &mut self.errors,
-                                    ErrorCode::RuntimeError,
-                                    format!("Can't load model '{model_name}' error = {err:?}"),
-                                )));
-                            }
+        let target = if parts.len() > 1 {
+            if let Some(target) = map_string_to_execution_target(&parts[parts.len() - 1]) {
+                target
+            } else {
+                ExecutionTarget::Cpu
+            }
+        } else {
+            ExecutionTarget::Cpu
+        };
+
+        if parts.len() > 0 {
+            let model_name = &parts[0];
+            println!("Searching for model = `{model_name}`");
+            if let Some(model) = self.model_files.get(model_name) {
+                if let Some(backend) = self
+                    .backends
+                    .iter_mut()
+                    .find(|b| b.encoding() == model.encoding)
+                {
+                    match backend.load(model, target) {
+                        Ok(graph_internal_data) => {
+                            return MLHostImpl::new_graph(
+                                &mut self.graphs,
+                                &mut self.errors,
+                                graph_internal_data,
+                            );
+                        }
+                        Err(err) => {
+                            return Ok(Err(MLHostImpl::new_error(
+                                &mut self.errors,
+                                ErrorCode::RuntimeError,
+                                format!("Can't load model '{model_name}' error = {err:?}"),
+                            )));
                         }
                     }
                 }
@@ -391,6 +408,28 @@ impl graph::Host for MLHostImpl {
         Err(anyhow!(
             "[graph::Host] fn load_by_name -> model not supported "
         ))
+    }
+
+    async fn register_by_name(
+        &mut self,
+        model_name: String,
+        encoding: GraphEncoding,
+        files: Vec<String>,
+        sources: Vec<Vec<String>>,
+        hashes: Vec<String>,
+    ) -> Result<Result<(), Resource<errors::Error>>, anyhow::Error> {
+        println!("Registering model `{model_name}`");
+        let _r = self.model_files.insert(
+            model_name.clone(),
+            ModelFiles {
+                name: model_name.clone(),
+                encoding,
+                files,
+                sources,
+                hashes,
+            },
+        );
+        Ok(Ok(()))
     }
 }
 
@@ -401,6 +440,17 @@ fn map_string_to_graph_encoding(target: &str) -> Option<GraphEncoding> {
     match target {
         "openvino" => Some(GraphEncoding::Openvino),
         "llm" => Some(GraphEncoding::Ggml),
+        _ => None,
+    }
+}
+
+/// Return the execution target string expected by OpenVINO from the
+/// `ExecutionTarget` enum provided by wasi-nn.
+fn map_string_to_execution_target(target: &str) -> Option<ExecutionTarget> {
+    match target {
+        "CPU" => Some(ExecutionTarget::Cpu),
+        "GPU" => Some(ExecutionTarget::Gpu),
+        "TPU" => Some(ExecutionTarget::Tpu),
         _ => None,
     }
 }

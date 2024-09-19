@@ -8,13 +8,13 @@ use crate::backend::BackendGraph;
 
 use super::{BackendExecutionContext, BackendInner, TensorId};
 
-use crate::model_files::ModelFiles;
+use crate::model_files::{self, ModelFiles};
 use openvino::{DeviceType, ElementType, Shape, Tensor as OvTensor};
 
 use std::path::PathBuf;
 
 use crate::ml_host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use std::sync::{Arc, Mutex};
 
 pub struct OpenvinoBackend {
@@ -37,15 +37,18 @@ impl BackendInner for OpenvinoBackend {
 
     fn load(
         &mut self,
-        builders: Vec<GraphBuilder>,
+        model_files: &ModelFiles,
         target: ExecutionTarget,
-        encoding: GraphEncoding,
-        _name: Option<String>,
     ) -> Result<GraphInternalData, anyhow::Error> {
+        let state_dir = self
+            .state_dir
+            .clone()
+            .context("state_dir is not set, therefore there is no place to download models")?;
+        let builders = model_files.builders(&state_dir)?;
         if builders.len() != 2 {
             return Err(anyhow!("Expected 2 elements in graph builder vector"));
         }
-        if encoding != GraphEncoding::Openvino {
+        if model_files.encoding != GraphEncoding::Openvino {
             return Err(anyhow!("Only OpenVINO encoding is supported"));
         }
 
@@ -72,44 +75,6 @@ impl BackendInner for OpenvinoBackend {
         Ok(GraphInternalData(Box::new(OpenvinoGraph(Arc::new(
             Mutex::new(compiled_model),
         )))))
-    }
-
-    fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error> {
-        let parts: Vec<_> = model_name.split(':').map(|x| x.to_string()).collect();
-        if parts.len() == 3 {
-            if let Some(target) = map_string_to_execution_target(&parts[2]) {
-                let model_name = &parts[1];
-                if model_name == "imagenet" {
-                    if let Some(dir) = &self.state_dir {
-                        let model_files = ModelFiles {
-                            name: model_name.to_string(),
-                            encoding: GraphEncoding::Openvino,
-                            files: vec!["model.xml".to_string(), "model.bin".to_string()],
-                            sources: vec![
-                                        "https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/model.xml".to_string(),
-                                        "https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/model.bin".to_string(),
-                            ],
-                            hashes: vec![
-                                "sha1:380a4621bf51ae357cb0eaafab203f214dbb036c".to_string(), 
-                                "sha1:a50b3bbd47369e306002193fd18847a186c0bcf4".to_string(),
-                            ],
-                        };
-                        let builders = model_files.builders(&dir)?;
-                        return self.load(
-                            builders,
-                            target,
-                            GraphEncoding::Openvino,
-                            Some(model_name.clone()),
-                        );
-                    } else {
-                        return Err(anyhow!(
-                            "state_dir is not set, therefore there is no place to download models"
-                        ));
-                    }
-                }
-            }
-        }
-        Err(anyhow!("not implemented"))
     }
 }
 
@@ -188,7 +153,6 @@ impl BackendExecutionContext for OpenvinoExecutionContext {
     }
 }
 
-
 /// Return the execution target string expected by OpenVINO from the
 /// `ExecutionTarget` enum provided by wasi-nn.
 fn map_execution_target_to_string(target: ExecutionTarget) -> DeviceType<'static> {
@@ -198,17 +162,6 @@ fn map_execution_target_to_string(target: ExecutionTarget) -> DeviceType<'static
         ExecutionTarget::Tpu => {
             unimplemented!("OpenVINO does not support TPU execution targets")
         }
-    }
-}
-
-/// Return the execution target string expected by OpenVINO from the
-/// `ExecutionTarget` enum provided by wasi-nn.
-fn map_string_to_execution_target(target: &str) -> Option<ExecutionTarget> {
-    match target {
-        "CPU" => Some(ExecutionTarget::Cpu),
-        "GPU" => Some(ExecutionTarget::Gpu),
-        "TPU" => Some(ExecutionTarget::Tpu),
-        _ => None,
     }
 }
 

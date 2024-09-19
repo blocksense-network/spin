@@ -4,7 +4,7 @@ use multipart::server::Multipart;
 
 use std::io::Read;
 
-use ml::fermyon::spin::graph::load_by_name;
+use ml::fermyon::spin::graph::{load_by_name, register_by_name, GraphEncoding};
 
 use spin_sdk::http::{IntoResponse, Response};
 use spin_sdk::http_component;
@@ -99,7 +99,17 @@ fn imagenet_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
             let file_content = form_data.file_content;
 
             use core::result::Result::Ok;
-            let imagenet_name = format!("openvino:imagenet:{}", target);
+            let files = vec!["model.xml".to_string(), "model.bin".to_string()];
+            let sources = vec![
+                            vec!["https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/model.xml".to_string()],
+                            vec!["https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/model.bin".to_string()],
+                ];
+            let hashes = vec![
+                "sha1:380a4621bf51ae357cb0eaafab203f214dbb036c".to_string(), 
+                "sha1:a50b3bbd47369e306002193fd18847a186c0bcf4".to_string(),
+            ];
+            let reg = register_by_name("imagenet", GraphEncoding::Openvino, &files, &sources, &hashes);
+            let imagenet_name = format!("imagenet:{}", target);
 
             match load_by_name(&imagenet_name) {
                 Ok(imagenet_graph) => match graph::Graph::init_execution_context(&imagenet_graph) {

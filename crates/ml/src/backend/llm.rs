@@ -13,9 +13,9 @@ use super::GraphInternalData;
 use super::{BackendExecutionContext, BackendInner, TensorId};
 use crate::ml_host_impl::ExecutionContext;
 use crate::ml_host_impl::TensorInternalData;
+use crate::model_files::ModelFiles;
 
 use anyhow::{anyhow, Context, Ok};
-use sha1::{Digest, Sha1};
 
 pub struct RustformersLLMBackend {
     pub state_dir: Option<PathBuf>,
@@ -42,60 +42,33 @@ impl BackendInner for RustformersLLMBackend {
 
     fn load(
         &mut self,
-        _builders: Vec<GraphBuilder>,
+        model_files: &ModelFiles,
         _target: ExecutionTarget,
-        _encoding: GraphEncoding,
-        _name: Option<String>,
     ) -> Result<GraphInternalData, anyhow::Error> {
-        //Err(anyhow!("not implemented"))
-        Err(anyhow!("not implemented"))
-    }
+        let state_dir = self
+            .state_dir
+            .clone()
+            .context("state_dir is not set, therefore there is no place to download models")?;
 
-    fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error> {
         let model_architecture = llm::ModelArchitecture::Llama;
         let tokenizer_source = llm::TokenizerSource::Embedded;
-        let mut parts = model_name.split(':');
-        if let Some(prefix) = parts.next() {
-            if prefix != "llm" {
-                return Err(anyhow!("Expected `llm` as model prefix"));
-            }
-        } else {
-            return Err(anyhow!("Expected model prefix"));
-        }
-        if let Some(model_file) = parts.next() {
-            let model_path = self
-                .state_dir
-                .clone()
-                .unwrap()
-                .join("models")
-                .join(model_file);
-            //.join("open_llama_3b-f16.bin");
-
-            println!("Reading {model_path:?}");
-            let file_data = std::fs::read(&model_path).unwrap();
-            let file_data_size = file_data.len();
-            let mut hasher = Sha1::new();
-            hasher.update(file_data);
-            let sha1_hash = hasher.finalize();
-            println!("{model_path:?} hash = {sha1_hash:x} size = {file_data_size}");
-
-            let model = llm::load_dynamic(
-                Some(model_architecture),
-                &model_path,
-                tokenizer_source,
-                Default::default(),
-                llm::load_progress_callback_stdout,
-            )
-            .map_err(|err| {
-                anyhow!("Failed to load {model_architecture} model from {model_path:?}: {err}")
-            })?;
-            let res = RustformersLLMGraph {
-                model: Arc::<dyn Model>::from(model),
-            };
-            Ok(GraphInternalData(Box::new(res)))
-        } else {
-            Err(anyhow!("Expected model name after `llm` prefix"))
-        }
+        let model_path = model_files
+            .model_directory(&state_dir)
+            .join(&model_files.files[0]);
+        let model = llm::load_dynamic(
+            Some(model_architecture),
+            &model_path,
+            tokenizer_source,
+            Default::default(),
+            llm::load_progress_callback_stdout,
+        )
+        .map_err(|err| {
+            anyhow!("Failed to load {model_architecture} model from {model_path:?}: {err}")
+        })?;
+        let res = RustformersLLMGraph {
+            model: Arc::<dyn Model>::from(model),
+        };
+        Ok(GraphInternalData(Box::new(res)))
     }
 }
 

@@ -3,24 +3,24 @@ use spin_world::v2 as ml_wit;
 use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
 
 use crate::ml_host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
-
-#[cfg(feature = "openvino")]
-pub mod openvino;
+use crate::model_files::ModelFiles;
 
 pub mod llm;
+#[cfg(feature = "openvino")]
+pub mod openvino;
 
 /// A [Backend] contains the necessary state to load [Graph]s.
 pub trait BackendInner: Send + Sync {
     fn encoding(&self) -> GraphEncoding;
     fn load(
         &mut self,
-        builders: Vec<GraphBuilder>,
+        model_files: &ModelFiles, //builders: Vec<GraphBuilder>,
         target: ExecutionTarget,
-        encoding: GraphEncoding,
-        name: Option<String>,
+        //encoding: GraphEncoding,
+        //name: Option<String>,
     ) -> Result<GraphInternalData, anyhow::Error>;
 
-    fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error>;
+    //fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error>;
 }
 
 /// A [BackendGraph] can create [BackendExecutionContext]s; this is the backing

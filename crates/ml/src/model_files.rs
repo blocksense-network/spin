@@ -37,15 +37,13 @@ pub fn try_download(url: &str, filename: &PathBuf) -> Result<(), anyhow::Error> 
     Ok(())
 }
 
-
-
 pub struct ModelFiles {
     pub name: String, // openvino:imagenet
     pub encoding: GraphEncoding,
-    pub files: Vec<String>,   // ["model.xml", "model.bin"]
-    pub sources: Vec<String>, // [
-    // "https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/model.xml",
-    // "https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/model.bin",
+    pub files: Vec<String>,        // ["model.xml", "model.bin"]
+    pub sources: Vec<Vec<String>>, // [
+    // ["https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/model.xml",],
+    // ["https://raw.githubusercontent.com/blocksense-network/imagenet_openvino/db44329b8e2b3398c9cc34dd56d94f3ce6fd6e21/model.bin",],
     // ]
     pub hashes: Vec<String>, // [ "sha1:380a4621bf51ae357cb0eaafab203f214dbb036c", "sha1:a50b3bbd47369e306002193fd18847a186c0bcf4" ]
 }
@@ -70,7 +68,7 @@ impl ModelFiles {
             let file_content = match fs::read(&filename) {
                 std::io::Result::Ok(file_content) => file_content,
                 std::io::Result::Err(_e) => {
-                    try_download(&self.sources[i], &filename)?;
+                    try_download(&self.sources[i][0], &filename)?;
                     let file_content = fs::read(filename)?;
                     file_content
                 }
@@ -80,7 +78,6 @@ impl ModelFiles {
         }
         Ok(res)
     }
-
 
     pub fn model_directory(&self, base_path: &Path) -> PathBuf {
         let imagenet_path = base_path.join(&self.name);
@@ -148,4 +145,3 @@ pub fn check_file_hash(file_data: &[u8], expected_hash: &[u8; 20]) -> std::io::R
         Err(e)
     }
 }
-

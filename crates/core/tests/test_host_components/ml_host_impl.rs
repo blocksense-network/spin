@@ -363,6 +363,17 @@ impl graph::Host for MLHostImpl {
         }
         panic!("[graph::Host] fn load_by_name -> model not supported ")
     }
+
+    fn register_by_name(
+        &mut self,
+        _model_name: String,
+        _encoding: GraphEncoding,
+        _files: Vec<String>,
+        _sources: Vec<Vec<String>>,
+        _hashes: Vec<std::string::String>,
+    ) -> Result<(), Resource<errors::Error>> {
+        panic!("[graph::Host] fn register_by_name -> not supported ")
+    }
 }
 
 impl inference::Host for MLHostImpl {}
