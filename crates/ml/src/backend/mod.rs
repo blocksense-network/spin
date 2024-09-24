@@ -1,6 +1,6 @@
 use spin_world::v2 as ml_wit;
 
-use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
+use ml_wit::graph::{ExecutionTarget, GraphEncoding};
 
 use crate::ml_host_impl::{ExecutionContext, GraphInternalData, TensorInternalData};
 use crate::model_files::ModelFiles;
@@ -14,13 +14,9 @@ pub trait BackendInner: Send + Sync {
     fn encoding(&self) -> GraphEncoding;
     fn load(
         &mut self,
-        model_files: &ModelFiles, //builders: Vec<GraphBuilder>,
+        model_files: &ModelFiles, 
         target: ExecutionTarget,
-        //encoding: GraphEncoding,
-        //name: Option<String>,
     ) -> Result<GraphInternalData, anyhow::Error>;
-
-    //fn load_by_name(&mut self, model_name: String) -> Result<GraphInternalData, anyhow::Error>;
 }
 
 /// A [BackendGraph] can create [BackendExecutionContext]s; this is the backing

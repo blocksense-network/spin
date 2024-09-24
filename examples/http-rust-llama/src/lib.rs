@@ -4,8 +4,7 @@ use multipart::server::Multipart;
 
 use std::io::Read;
 
-use ml::fermyon::spin::graph::load_by_name;
-
+use ml::fermyon::spin::graph::{load_by_name, GraphEncoding, register_by_name};
 use spin_sdk::http::{IntoResponse, Response};
 use spin_sdk::http_component;
 use spin_sdk::key_value::Store;
@@ -81,6 +80,9 @@ async fn llama_demo_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<impl 
     return Ok(response);
 }
 
+
+
+
 fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
     let res = match req.method() {
         &Method::POST => {
@@ -90,12 +92,17 @@ fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
             let mp = Multipart::with_body(&*body, boundary.as_str());
 
             let form_data = llama_process_form(mp).unwrap();
-
+            for model in llama_model_list() {
+                let files = vec![model.filename.clone()];
+                let sources = vec![vec![model.download_link.clone()],];
+                let hashes = vec![model.file_hash.clone()];
+                let reg_ = register_by_name(&model.name, GraphEncoding::Ggml, &files, &sources, &hashes);
+            };
             use core::result::Result::Ok;
             let model_name_parts: Vec<_> = form_data.model.split(':').map(|x| x.to_string()).collect();
-            let model_name = format!("llm:{}", model_name_parts[0]);
+            let model_name = format!("{}", model_name_parts[0]);
             let record_model_name = if model_name_parts.len() > 1 {
-                format!("llm:{}", model_name_parts[1])
+                format!("{}", model_name_parts[1])
             } else {
                 model_name.clone()
             };
@@ -115,8 +122,70 @@ fn llama_handler(req: http::Request<Vec<u8>>) -> anyhow::Result<String> {
     Ok(lamma_add_form(format!("<div>{res}</div>")))
 }
 
+
+
+struct LlamaModelOnline {
+    name: String,
+    filename: String,
+    download_link: String,
+    file_hash: String,
+}
+
+fn llama_model_list() -> Vec<LlamaModelOnline> {
+    vec![
+        LlamaModelOnline{
+            name: "llama-7b.q5_1".to_string(),
+            filename: "llama-7b.ggmlv3.q5_1.bin".to_string(),
+            download_link: "https://huggingface.co/TheBloke/LLaMa-7B-GGML/resolve/main/llama-7b.ggmlv3.q5_1.bin?download=true".to_string(),
+            file_hash: "sha1:ee8b56940de87849cfe0729218f6085d1aeace79".to_string(),
+
+        },
+        LlamaModelOnline{
+            name: "llama-7b.q4_0".to_string(),
+            filename: "llama-7b.ggmlv3.q4_0.bin".to_string(),
+            download_link: "https://huggingface.co/TheBloke/LLaMa-7B-GGML/resolve/main/llama-7b.ggmlv3.q4_0.bin?download=true".to_string(),
+            file_hash: "sha1:380a4621bf51ae357cb0eaafab203f214dbb036c".to_string(),
+
+        },
+        LlamaModelOnline{
+            name: "llama-7b.q8_0".to_string(),
+            filename: "llama-7b.ggmlv3.q8_0.bin".to_string(),
+            download_link: "https://huggingface.co/TheBloke/LLaMa-7B-GGML/resolve/main/llama-7b.ggmlv3.q8_0.bin?download=true".to_string(),
+            file_hash: "sha1:380a4621bf51ae357cb0eaafab203f214dbb036c".to_string(),
+
+        },
+        LlamaModelOnline{
+            name: "llama-30B.q4_0".to_string(),
+            filename: "ggml-model-q4_0.bin".to_string(), 
+            download_link: "https://huggingface.co/Drararara/llama-30B-ggml/resolve/main/ggml-model-q4_0.bin?download=true".to_string(),
+            file_hash: "sha1:380a4621bf51ae357cb0eaafab203f214dbb036c".to_string(),
+
+        },
+        LlamaModelOnline{
+            name: "open_llama_3b-f16".to_string(),
+            filename: "open_llama_3b-f16.bin".to_string(),
+            download_link: "https://huggingface.co/rustformers/open-llama-ggml/resolve/main/open_llama_3b-f16.bin?download=true".to_string(),
+            file_hash: "sha1:3bf81fc13d18d09c0897db372f88db3764c8a757".to_string(),
+        },
+    ]
+}
+
+
+
+
 fn lamma_add_form(mut html_body: String) -> String {
-    let form = r#"
+
+
+    let mut options = "".to_owned();
+    for model in llama_model_list() {
+        let files = vec![model.filename.clone()];
+        let sources = vec![vec![model.download_link.clone()],];
+        let hashes = vec![model.file_hash.clone()];
+        let reg_ = register_by_name(&model.name, GraphEncoding::Ggml, &files, &sources, &hashes);
+        options.push_str(format!("<option value=\"{}\">{}</option>",&model.name, &model.name).as_str());
+    };
+
+    let form = format!(r#"
     <!-- make sure the attribute enctype is set to multipart/form-data -->
     <form action="/llama" method="post" enctype="multipart/form-data">
         <h2>
@@ -140,18 +209,15 @@ fn lamma_add_form(mut html_body: String) -> String {
         <p>
         <label for="model">Choose a inference network:</label>
         <select name="model" id="model">
-            <option value="open_llama_3b-f16.bin">open_llama_3b-f16.bin</option>
-            <option value="open_llama_7b-f16.bin">open_llama_7b-f16.bin</option>
-            <option value="open_llama_3b-f16.bin:open_llama_7b-f16.bin">open_llama_3b-f16.bin:open_llama_7b-f16.bin</option>
-            <option value="llama-7b.ggmlv3.q8_0.bin">llama-7b.ggmlv3.q8_0.bin</option>
+            {options}
         </select> 
         </p>
         <p>
             <input type="submit"/>
         </p>
     </form>
-    "#;
-    html_body.push_str(form);
+    "#);
+    html_body.push_str(form.as_str());
     html_body
 }
 

@@ -1,6 +1,6 @@
 use spin_world::v2 as ml_wit;
 
-use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
+use ml_wit::graph::{ExecutionTarget, GraphEncoding};
 use ml_wit::tensor;
 use ml_wit::tensor::TensorType;
 
@@ -8,7 +8,7 @@ use crate::backend::BackendGraph;
 
 use super::{BackendExecutionContext, BackendInner, TensorId};
 
-use crate::model_files::{self, ModelFiles};
+use crate::model_files::ModelFiles;
 use openvino::{DeviceType, ElementType, Shape, Tensor as OvTensor};
 
 use std::path::PathBuf;

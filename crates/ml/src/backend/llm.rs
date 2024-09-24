@@ -4,7 +4,7 @@ use std::sync::Arc;
 use llm::{InferenceSession, InferenceSessionConfig, Model, OutputRequest, TokenUtf8Buffer};
 use spin_world::v2 as ml_wit;
 
-use ml_wit::graph::{ExecutionTarget, GraphBuilder, GraphEncoding};
+use ml_wit::graph::{ExecutionTarget, GraphEncoding};
 use ml_wit::tensor::TensorType;
 
 use crate::backend::BackendGraph;
@@ -49,12 +49,14 @@ impl BackendInner for RustformersLLMBackend {
             .state_dir
             .clone()
             .context("state_dir is not set, therefore there is no place to download models")?;
-
+        model_files.check_or_download(&state_dir)?;
+        println!("Checkpoint 1");
         let model_architecture = llm::ModelArchitecture::Llama;
         let tokenizer_source = llm::TokenizerSource::Embedded;
         let model_path = model_files
             .model_directory(&state_dir)
             .join(&model_files.files[0]);
+        println!("Checkpoint 2 {model_path:?}");
         let model = llm::load_dynamic(
             Some(model_architecture),
             &model_path,
@@ -68,6 +70,7 @@ impl BackendInner for RustformersLLMBackend {
         let res = RustformersLLMGraph {
             model: Arc::<dyn Model>::from(model),
         };
+        println!("Checkpoint 3 - OK ");
         Ok(GraphInternalData(Box::new(res)))
     }
 }

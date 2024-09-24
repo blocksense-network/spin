@@ -8,7 +8,6 @@ use ml_wit::inference::GraphExecutionContext;
 use ml_wit::{errors, graph, inference, tensor};
 
 use spin_core::async_trait;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use spin_core::wasmtime::component::Resource;
@@ -41,7 +40,7 @@ pub struct MLHostImpl {
 
     pub executions: table::Table<ExecutionContext>,
     pub backends: Vec<Box<dyn BackendInner>>,
-    pub model_files: HashMap<String, ModelFiles>,
+    pub model_files: table::Table<ModelFiles>,
 }
 
 impl MLHostImpl {
@@ -68,8 +67,25 @@ impl MLHostImpl {
                 ErrorCode::RuntimeError,
                 format!("{:?}", err),
             )),
-        })
+        })    
     }
+
+}
+
+fn find_model<'a>(model_files: &'a table::Table<ModelFiles>, name: &'a String) -> Option<&'a ModelFiles> {
+    for key in 0u32..1024u32 {
+        match model_files.get(key) {
+            Some(v) => {
+                if v.name == *name {
+                    return Some(v);
+                }
+            }
+            None => { 
+                break;
+            }
+        }
+    }
+    None
 }
 
 #[async_trait]
@@ -380,12 +396,25 @@ impl graph::Host for MLHostImpl {
         if parts.len() > 0 {
             let model_name = &parts[0];
             println!("Searching for model = `{model_name}`");
-            if let Some(model) = self.model_files.get(model_name) {
+            println!("In table: ");
+            for i in 0u32..1024u32 {
+                match self.model_files.get(i) {
+                    Some(m) => {
+                        println!("{}", m.name);
+                    },
+                    None => {
+                        break;
+                    }
+                }
+            }
+            if let Some(model) = find_model(&self.model_files, model_name) {
+                println!("found model = {} files = {:?}", model_name, model.files);
                 if let Some(backend) = self
                     .backends
                     .iter_mut()
                     .find(|b| b.encoding() == model.encoding)
                 {
+                    println!("BACKEND FOUND CALLING LOAD ");
                     match backend.load(model, target) {
                         Ok(graph_internal_data) => {
                             return MLHostImpl::new_graph(
@@ -403,6 +432,8 @@ impl graph::Host for MLHostImpl {
                         }
                     }
                 }
+            } else {
+                return Err(anyhow!( "[graph::Host] model {model_name} not found" ));
             }
         }
         Err(anyhow!(
@@ -419,30 +450,25 @@ impl graph::Host for MLHostImpl {
         hashes: Vec<String>,
     ) -> Result<Result<(), Resource<errors::Error>>, anyhow::Error> {
         println!("Registering model `{model_name}`");
-        let _r = self.model_files.insert(
-            model_name.clone(),
+        if let Ok(id) = self.model_files.push(
             ModelFiles {
                 name: model_name.clone(),
                 encoding,
                 files,
                 sources,
                 hashes,
-            },
-        );
+            }) {
+            println!("success! id = {id}");
+        } else {
+            println!("not success!");
+        }
+    
         Ok(Ok(()))
     }
 }
 
 impl inference::Host for MLHostImpl {}
 impl tensor::Host for MLHostImpl {}
-
-fn map_string_to_graph_encoding(target: &str) -> Option<GraphEncoding> {
-    match target {
-        "openvino" => Some(GraphEncoding::Openvino),
-        "llm" => Some(GraphEncoding::Ggml),
-        _ => None,
-    }
-}
 
 /// Return the execution target string expected by OpenVINO from the
 /// `ExecutionTarget` enum provided by wasi-nn.

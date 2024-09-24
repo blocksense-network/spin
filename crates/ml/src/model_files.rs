@@ -14,25 +14,26 @@ use spin_world::v2 as ml_wit;
 
 pub fn try_download(url: &str, filename: &PathBuf) -> Result<(), anyhow::Error> {
     let mut easy = Easy::new();
+    easy.follow_location(true)?;
     easy.url(url)
         .map_err(|e| anyhow::anyhow!("Error {} when downloading {}", e.to_string(), url))?;
 
+    let mut file = std::fs::File::create(filename)?;
     let mut dst = Vec::new();
     {
         let mut transfer = easy.transfer();
         transfer
             .write_function(|data| {
                 dst.extend_from_slice(data);
+                file.write_all(dst.as_slice()).map_err(|e| {println!("{e}"); WriteError::Pause } )?;
+                dst.clear();
+
                 Result::<usize, WriteError>::Ok(data.len())
             })
             .unwrap();
         transfer
             .perform()
             .map_err(|e| anyhow::anyhow!("Error {} when downloading {}", e.to_string(), url))?;
-    }
-    {
-        let mut file = std::fs::File::create(filename)?;
-        file.write_all(dst.as_slice())?;
     }
     Ok(())
 }
@@ -54,6 +55,24 @@ impl ModelFiles {
         for i in 0..self.files.len() {
             let filename = model_directory.join(self.files[i].clone());
             let file_content = fs::read(filename)?;
+            ModelFiles::check_file_hash(&file_content, &self.hashes[i])?;
+        }
+        Ok(())
+    }
+
+    pub fn check_or_download(&self, base_path: &Path) -> Result<(), anyhow::Error> {
+        let model_directory = self.model_directory(base_path);
+        fs::create_dir_all(model_directory.clone())?;
+        for i in 0..self.files.len() {
+            let filename = model_directory.join(self.files[i].clone());
+            let file_content = match fs::read(&filename) {
+                std::io::Result::Ok(file_content) => file_content,
+                std::io::Result::Err(_e) => {
+                    try_download(&self.sources[i][0], &filename)?;
+                    let file_content = fs::read(filename)?;
+                    file_content
+                }
+            };
             ModelFiles::check_file_hash(&file_content, &self.hashes[i])?;
         }
         Ok(())

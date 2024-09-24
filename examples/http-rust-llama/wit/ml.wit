@@ -1,6 +1,5 @@
 package fermyon:spin@2.0.0;
 
-
 /// `wasi-nn` is a WASI API for performing machine learning (ML) inference. The API is not (yet)
 /// capable of performing ML training. WebAssembly programs that want to use a host's ML
 /// capabilities can access these capabilities through `wasi-nn`'s core abstractions: _graphs_ and
@@ -15,6 +14,7 @@ world ml {
     import inference;
     import errors;
 }
+
 
 /// All inputs and outputs to an ML inference are represented as `tensor`s.
 interface tensor {
@@ -105,6 +105,11 @@ interface graph {
     /// this function is **implementation-specific**. This allows hosts to choose name schemes that
     /// range from simple to complex (e.g., URLs?) and caching mechanisms of various kinds.
     load-by-name: func(name: string) -> result<graph, error>;
+
+
+    /// Register a `graph` by name, files and where to download them from internet
+    register-by-name: func(name: string, encoding: graph-encoding, files: list<string>, sources: list<list<string>>, hashes: list<string>) -> result<_, error>;
+
 }
 
 /// An inference "session" is encapsulated by a `graph-execution-context`. This structure binds a
