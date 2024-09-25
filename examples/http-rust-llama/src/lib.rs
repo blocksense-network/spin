@@ -151,14 +151,14 @@ fn llama_model_list() -> Vec<LlamaModelOnline> {
             name: "llama-7b.q8_0".to_string(),
             filename: "llama-7b.ggmlv3.q8_0.bin".to_string(),
             download_link: "https://huggingface.co/TheBloke/LLaMa-7B-GGML/resolve/main/llama-7b.ggmlv3.q8_0.bin?download=true".to_string(),
-            file_hash: "sha1:380a4621bf51ae357cb0eaafab203f214dbb036c".to_string(),
+            file_hash: "sha1:f729c9726c95acb394ceecb822218d2803d9095c".to_string(),
 
         },
         LlamaModelOnline{
-            name: "llama-30B.q4_0".to_string(),
-            filename: "ggml-model-q4_0.bin".to_string(), 
-            download_link: "https://huggingface.co/Drararara/llama-30B-ggml/resolve/main/ggml-model-q4_0.bin?download=true".to_string(),
-            file_hash: "sha1:380a4621bf51ae357cb0eaafab203f214dbb036c".to_string(),
+            name: "llama-30b.ggmlv3.q2_K".to_string(),
+            filename: "llama-30b.ggmlv3.q2_K.bin".to_string(), 
+            download_link: "https://huggingface.co/TheBloke/LLaMa-30B-GGML/resolve/main/llama-30b.ggmlv3.q2_K.bin?download=true".to_string(),
+            file_hash: "sha256:f416b9174ae3d4f4c6f615069989a9757003cdbb67565aefe922ec46474a3445".to_string(),
 
         },
         LlamaModelOnline{

@@ -7884,6 +7884,7 @@ dependencies = [
  "llm",
  "openvino",
  "sha1 0.10.6",
+ "sha2",
  "spin-app",
  "spin-core",
  "spin-world",

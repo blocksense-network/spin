@@ -14,7 +14,7 @@ pub trait BackendInner: Send + Sync {
     fn encoding(&self) -> GraphEncoding;
     fn load(
         &mut self,
-        model_files: &ModelFiles, 
+        model_files: &ModelFiles,
         target: ExecutionTarget,
     ) -> Result<GraphInternalData, anyhow::Error>;
 }

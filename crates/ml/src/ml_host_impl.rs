@@ -67,12 +67,14 @@ impl MLHostImpl {
                 ErrorCode::RuntimeError,
                 format!("{:?}", err),
             )),
-        })    
+        })
     }
-
 }
 
-fn find_model<'a>(model_files: &'a table::Table<ModelFiles>, name: &'a String) -> Option<&'a ModelFiles> {
+fn find_model<'a>(
+    model_files: &'a table::Table<ModelFiles>,
+    name: &'a String,
+) -> Option<&'a ModelFiles> {
     for key in 0u32..1024u32 {
         match model_files.get(key) {
             Some(v) => {
@@ -80,7 +82,7 @@ fn find_model<'a>(model_files: &'a table::Table<ModelFiles>, name: &'a String) -
                     return Some(v);
                 }
             }
-            None => { 
+            None => {
                 break;
             }
         }
@@ -401,7 +403,7 @@ impl graph::Host for MLHostImpl {
                 match self.model_files.get(i) {
                     Some(m) => {
                         println!("{}", m.name);
-                    },
+                    }
                     None => {
                         break;
                     }
@@ -433,7 +435,7 @@ impl graph::Host for MLHostImpl {
                     }
                 }
             } else {
-                return Err(anyhow!( "[graph::Host] model {model_name} not found" ));
+                return Err(anyhow!("[graph::Host] model {model_name} not found"));
             }
         }
         Err(anyhow!(
@@ -450,19 +452,18 @@ impl graph::Host for MLHostImpl {
         hashes: Vec<String>,
     ) -> Result<Result<(), Resource<errors::Error>>, anyhow::Error> {
         println!("Registering model `{model_name}`");
-        if let Ok(id) = self.model_files.push(
-            ModelFiles {
-                name: model_name.clone(),
-                encoding,
-                files,
-                sources,
-                hashes,
-            }) {
+        if let Ok(id) = self.model_files.push(ModelFiles {
+            name: model_name.clone(),
+            encoding,
+            files,
+            sources,
+            hashes,
+        }) {
             println!("success! id = {id}");
         } else {
             println!("not success!");
         }
-    
+
         Ok(Ok(()))
     }
 }

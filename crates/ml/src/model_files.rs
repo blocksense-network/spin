@@ -3,6 +3,7 @@ use curl::easy::WriteError;
 
 use hex::decode;
 use sha1::{Digest, Sha1};
+use sha2::Sha256;
 
 use std::fs;
 use std::io::Write;
@@ -25,7 +26,10 @@ pub fn try_download(url: &str, filename: &PathBuf) -> Result<(), anyhow::Error> 
         transfer
             .write_function(|data| {
                 dst.extend_from_slice(data);
-                file.write_all(dst.as_slice()).map_err(|e| {println!("{e}"); WriteError::Pause } )?;
+                file.write_all(dst.as_slice()).map_err(|e| {
+                    println!("{e}");
+                    WriteError::Pause
+                })?;
                 dst.clear();
 
                 Result::<usize, WriteError>::Ok(data.len())
@@ -113,11 +117,9 @@ impl ModelFiles {
                     if let Some(hash_str) = parts.next() {
                         let x = decode(&hash_str).unwrap();
                         let x2: [u8; 20] = x.as_slice().try_into().unwrap();
-
                         let mut hasher = Sha1::new();
                         hasher.update(file_data);
                         let sha1_hash = hasher.finalize();
-
                         let check = sha1_hash == (x2).into();
                         if check {
                             return std::io::Result::Ok(());
@@ -132,7 +134,22 @@ impl ModelFiles {
                     return Err(e);
                 }
                 "sha256" => {
-                    let message = format!("SHA265 is not implemented");
+                    if let Some(hash_str) = parts.next() {
+                        let x = decode(&hash_str).unwrap();
+                        let x2: [u8; 32] = x.as_slice().try_into().unwrap();
+                        let mut hasher = Sha256::new();
+                        hasher.update(file_data);
+                        let sha256_hash = hasher.finalize();
+                        let check = sha256_hash == (x2).into();
+                        if check {
+                            return std::io::Result::Ok(());
+                        } else {
+                            let message = format!("Expected sha256 hash = {:x}", sha256_hash);
+                            let e = std::io::Error::new(std::io::ErrorKind::InvalidData, message);
+                            return Err(e);
+                        }
+                    }
+                    let message = format!("Wrong hash format, use for example `sha256:380..b036c`");
                     let e = std::io::Error::new(std::io::ErrorKind::InvalidData, message);
                     return Err(e);
                 }
